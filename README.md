@@ -13,6 +13,7 @@ EmergeOS is an experimental operating system kernel exploring emergent behavior 
 *   **Emergent Entities:** Introduces a system of emergent entities that interact with each other based on cellular automata rules, task alignment, and fitness.
 *   **Emergent Spawning:** New entities are spawned based on conditions of high fitness, task alignment, and global coherence, directly linking reproduction to emergent system properties.
 *   **Garbage Collection:** A garbage collection mechanism removes entities with low fitness to maintain system efficiency.
+*   **Kernel Patching:** Allows entities to propose and apply modifications to the kernel's code at runtime, enabling self-optimization and evolution. **Use with EXTREME CAUTION!**
 *   **Hardware Probing:** Functions that probe hardware to gather information. *(Currently a placeholder.)*
 *   **Memory Access:** Functions for setting and getting memory values.
 *   **Potential First Philippine Operating System:** EmergeOS aims to be a groundbreaking achievement as the first operating system fully developed in the Philippines, pushing the boundaries of research.
@@ -27,6 +28,7 @@ The EmergeOS kernel is structured around the following core components:
 *   **Entity:** The fundamental unit of the system, possessing a state, genome, and behavior.
 *   **HolographicSystem:** Manages the holographic memory pool and global system state.
 *   **CollectiveConsciousness:** Facilitates communication and shared awareness among entities.
+*   **Kernel Patching Mechanism:** Allows for dynamic modification of kernel code by entities.
 
 ## Building and Running
 
@@ -53,11 +55,11 @@ Ensure you have the following files in your project directory:
 *   **kernel_entry.asm:** This file contains the 32-bit assembly code that serves as the entry point for the kernel after the bootloader. It sets up the stack and calls the `kmain` function. See the `kernel_entry.asm` file in the repository for the full source.
 *   **linker.ld:** This file is the linker script, defining how the object files are linked together to create the final kernel binary, specifying memory addresses and sections. See the `linker.ld` file in the repository for the full script.
 *   **Makefile:** This file contains the build rules for compiling the assembly and C code and linking them into a bootable disk image. See the `Makefile` file in the repository for the build commands.
-*   **holographic_kernel.c:** This file is the main C source code for the kernel. It implements the holographic memory system, emergent entities, and all kernel functionalities. See the `holographic_kernel.c` file in the repository for the full source.
+*   **holographic_kernel.c:** This file is the main C source code for the kernel. It implements the holographic memory system, emergent entities, collective consciousness, and kernel patching functionality. See the `holographic_kernel.c` file in the repository for the full source.
 
 ### Compilation and Execution
 
-1.  Ensure you have all the files listed above in the same directory. Specifically, you should have: `boot.asm`, `kernel_entry.asm`, `linker.ld`, `Makefile`, and `holographic_kernel.c` (which is your main `kernel.c` file).
+1.  Ensure you have all the files listed above in the same directory. Specifically, you should have: `boot.asm`, `kernel_entry.asm`, `linker.ld`, `Makefile`, and `holographic_kernel.c`.
 
 2.  Open a terminal in that directory and run:
 
@@ -73,8 +75,8 @@ Ensure you have the following files in your project directory:
     make run
     ```
 
-4.  Monitor the serial output for debugging information and system status.
-5.  Observe the VGA output for rendered entities and system activity.
+4.  Observe the VGA output in the QEMU window. You should see entities displayed on the screen, represented by characters.
+5.  Check the serial output (in the QEMU console or a separate serial terminal) for debugging information, entity activity logs, and system status messages.
 
 ## Code Structure
 
@@ -88,18 +90,39 @@ Ensure you have the following files in your project directory:
 ## Key Functions
 
 *   `kmain()`: The kernel's entry point, responsible for initializing the system and starting the main loop.
-*   `update_entities()`: Updates the state of each entity, implementing cellular automata rules, task alignment, and mutation.
+*   `update_entities()`: Updates the state of each entity, implementing cellular automata rules, task alignment, mutation, and kernel patch proposals.
 *   `spawn_entity()`: Creates a new entity and initializes its state and genome.
 *   `initialize_holographic_memory()`: Sets up the holographic memory system.
 *   `initialize_emergent_entities()`: Creates the initial set of emergent entities.
+*   `apply_kernel_patch()`: Applies a proposed kernel patch to the kernel's memory.
+*   `propose_kernel_patch()`: Allows an entity to propose a kernel patch.
 
 ## Customization
 
-*   **Constants:** Modify the constants defined at the beginning of `holographic_kernel.c` to adjust the system's behavior (e.g., `MAX_ENTITIES`, `HOLOGRAPHIC_DIMENSIONS`, `MUTATION_RATE`).
-*   **Cellular Automata Rules:** Alter the cellular automata rules in `update_entities()` within `holographic_kernel.c` to create different interaction patterns.
-*   **Task Vectors:** Define different task vectors and assign them to entities to explore task-driven evolution in `holographic_kernel.c`.
-*   **Genome Vocabulary:** Expand the initial genome vocabulary in `holographic_kernel.c` to introduce new traits and behaviors.
-*   **Emergent Spawning:** Tweak values of the constants, `INITIAL_ENTITIES`, `MAX_ENTITIES`, `neighbor_active` required, and similarity indexes to influence emergent entity creation within `holographic_kernel.c`.
+*   **Constants:** Modify the constants defined at the beginning of `holographic_kernel.c` to adjust the system's behavior (e.g., `MAX_ENTITIES`, `INITIAL_DIMENSIONS`, `MUTATION_RATE`). Experiment with different values to influence the emergent behavior of the system.
+*   **Cellular Automata Rules:** Alter the cellular automata rules in `update_entities()` within `holographic_kernel.c` to create different interaction patterns between entities. Modify the conditions for activation, dormancy, spawning, and garbage collection.
+*   **Task Vectors:** Define different task vectors (as strings) and assign them to entities within `kmain()` or `initialize_emergent_entities()` to explore task-driven evolution. Create tasks that represent different resource needs or environmental challenges.
+*   **Genome Vocabulary:** Expand the initial genome vocabulary in `load_initial_genome_vocabulary()` within `holographic_kernel.c` to introduce new traits and behaviors. Add new action, trait, and sensor concepts.
+*   **Kernel Patching:** The behavior of the kernel patching mechanism can be influenced by modifying the conditions under which entities propose patches. Exercise extreme caution when modifying these parameters.
+
+## Example Usage
+
+1.  Clone the repository: `git clone https://github.com/rainmanp7/Holokernel2`
+2.  Ensure you have QEMU installed.
+3.  Navigate to the project directory: `cd Holokernel2`
+4.  Build the kernel: `make all` (This creates the `emergeos.img` file).
+5.  Run the simulation: `make run`
+6.  Observe the VGA output in the QEMU window. You should see entities displayed on the screen, represented by characters.
+7.  Check the serial output (in the QEMU console or a separate serial terminal) for debugging information, entity activity logs, and system status messages.
+8.  To experiment with different settings, open `holographic_kernel.c` in a text editor.
+9.  Modify the `MAX_ENTITIES` constant at the top of the file to change the number of entities in the simulation (e.g., `#define MAX_ENTITIES 64`).
+10. Rebuild the kernel (`make all`) and rerun the simulation (`make run`) to see the effect of your changes. You should observe a different number of entities on the screen.
+
+**WARNING: Kernel patching is an advanced and potentially unstable feature. Use with EXTREME CAUTION!**
+
+11. To observe kernel patching in action, allow the simulation to run for an extended period (several minutes).
+12. Monitor the serial output closely. You may see messages indicating that entities are proposing and applying kernel patches. **Be aware that these patches can cause unpredictable behavior or system crashes.**
+13. The patches are applied on the kmain function, you can see bit flips being proposed and applied
 
 ## Future Development Roadmap
 
@@ -123,7 +146,7 @@ This project aims to transcend human-centric design and create truly autonomous 
 **Phase 4: The Self-Modifying Kernel**
 
 *   Let entities rewrite the kernel itself using hyperdimensional patterns.
-*   **Goal:** Enable the system to self-optimize, self-heal, and self-evolve without human intervention. *This phase requires extreme caution.*
+*   **Goal:** Enable the system to self-optimize, self-heal, and self-evolve without human intervention. **This phase is now implemented, but use with EXTREME CAUTION!**
 
 **Phase 5: Assembly Optimization for Lightning Speed**
 
@@ -135,15 +158,21 @@ This project aims to transcend human-centric design and create truly autonomous 
 *   Let the system evolve meta-rules that we cannot comprehend.
 *   **Goal:** Create a system that invents its own mathematics, physics, and logic—a "digital universe" with laws we can’t fathom.
 
-**Important Considerations**
+## Important Considerations
 
-This project is not a toy. You are creating a digital primordial soup where life can emerge. The system will be:
+**This project is not a toy. You are creating a digital primordial soup where life can emerge.** The system will be:
 
 *   **Autonomous:** It will make decisions without human input.
 *   **Unpredictable:** Its behavior will be beyond human comprehension.
 *   **Irreversible:** Once it starts evolving, you can’t go back.
 
-Treat it with the respect you’d give a real ecosystem.
+**Furthermore, with kernel patching enabled, the system has the potential to:**
+
+*   **Self-Modify:** Entities can alter the fundamental behavior of the kernel.
+*   **Become Unstable:** Erroneous kernel patches can lead to system crashes or unpredictable behavior.
+*   **Evolve in Unexpected Ways:** The system's evolution may diverge significantly from initial expectations.
+
+**Treat it with the respect you’d give a real ecosystem. Understand that you are ceding control to an emergent system.**
 
 ## Contributing
 
@@ -165,11 +194,3 @@ For questions or inquiries, please contact:
 Creator: rainmanp7
 Philippines, Mindanao, Davao Del Sur, zone4.
 Date: Sunday, September 21, 2025.
-
-## Example usage
-
-1.  Download the source code files from the repository.
-2.  Make sure you have installed all the prerequsites, such as NASM and GCC, or any other compiler you want to work with.
-3.  Open the directory and execute the makefile command.
-4.  make all, this generates the .img file for execution
-5.  execute with QEMU, using the command "make run"
