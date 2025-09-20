@@ -1,4 +1,7 @@
 ; boot.asm
+; This file contains the 16-bit bootloader code.
+; It is responsible for loading the kernel into memory
+; and transitioning to protected mode.
 [org 0x7c00]
 [bits 16]
 
