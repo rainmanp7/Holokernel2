@@ -1,7 +1,5 @@
 # EmergeOS: Enhanced Holographic Kernel with Dynamic Emergent Behavior
 
-Origin: Skyline and Hyperdimensional Research.
-
 ## Overview
 
 EmergeOS is an experimental operating system kernel exploring emergent behavior in artificial systems. This project combines concepts from holographic memory, dynamic hyperdimensional manifolds, self-modifying genomes, and collective consciousness to create a unique and evolving computational environment. EmergeOS aims to be the first fully operational operating system developed in the Philippines, pushing the boundaries of adaptive and intelligent systems. It also stands as a potential first globally in combining the technologies described.
@@ -41,7 +39,7 @@ The EmergeOS kernel is structured around the following core components:
 
 ### Files Required
 
-Create the following files in your project directory:
+Ensure you have the following files in your project directory:
 
 *   `boot.asm`: Contains the bootloader code.
 *   `kernel_entry.asm`: Contains the kernel entry point.
@@ -51,7 +49,7 @@ Create the following files in your project directory:
 
 ### File Content Summary
 
-*   **boot.asm:** This file contains the 16-bit assembly code for the bootloader, responsible for loading the kernel into memory and transitioning to protected mode.  See the `boot.asm` file in the repository for the full source.
+*   **boot.asm:** This file contains the 16-bit assembly code for the bootloader, responsible for loading the kernel into memory and transitioning to protected mode. See the `boot.asm` file in the repository for the full source.
 *   **kernel_entry.asm:** This file contains the 32-bit assembly code that serves as the entry point for the kernel after the bootloader. It sets up the stack and calls the `kmain` function. See the `kernel_entry.asm` file in the repository for the full source.
 *   **linker.ld:** This file is the linker script, defining how the object files are linked together to create the final kernel binary, specifying memory addresses and sections. See the `linker.ld` file in the repository for the full script.
 *   **Makefile:** This file contains the build rules for compiling the assembly and C code and linking them into a bootable disk image. See the `Makefile` file in the repository for the build commands.
@@ -59,7 +57,7 @@ Create the following files in your project directory:
 
 ### Compilation and Execution
 
-1.  Ensure you have all the files listed above in the same directory.  Specifically, you should have: `boot.asm`, `kernel_entry.asm`, `linker.ld`, `Makefile`, and `holographic_kernel.c` (which is your main `kernel.c` file).
+1.  Ensure you have all the files listed above in the same directory. Specifically, you should have: `boot.asm`, `kernel_entry.asm`, `linker.ld`, `Makefile`, and `holographic_kernel.c` (which is your main `kernel.c` file).
 
 2.  Open a terminal in that directory and run:
 
@@ -80,7 +78,7 @@ Create the following files in your project directory:
 
 ## Code Structure
 
-*   `kernel.c` (or `holographic_kernel.c`): Contains the main kernel source code, including function definitions, data structures, and the main loop.
+*   `holographic_kernel.c`: Contains the main kernel source code, including function definitions, data structures, and the main loop.
 *   `boot.asm`: Contains the 16-bit bootloader code.
 *   `kernel_entry.asm`: Contains the 32-bit kernel entry point.
 *   `linker.ld`: Specifies the memory layout and entry point for the kernel.
@@ -102,27 +100,6 @@ Create the following files in your project directory:
 *   **Task Vectors:** Define different task vectors and assign them to entities to explore task-driven evolution in `holographic_kernel.c`.
 *   **Genome Vocabulary:** Expand the initial genome vocabulary in `holographic_kernel.c` to introduce new traits and behaviors.
 *   **Emergent Spawning:** Tweak values of the constants, `INITIAL_ENTITIES`, `MAX_ENTITIES`, `neighbor_active` required, and similarity indexes to influence emergent entity creation within `holographic_kernel.c`.
-
-## Contributing
-
-Contributions to this project are welcome! Feel free to submit pull requests with bug fixes, new features, or improved documentation.
-
-## License
-
-This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See the `LICENSE` file for details.
-
-## Contact
-
-For questions or inquiries, please contact:
-
-*   muslimsoap@gmail.com
-*   rainmanp7@gmail.com
-
-## Creator
-
-Creator: rainmanp7
-Philippines, Mindanao, Davao Del Sur, zone4.
-Date: Sunday, September 21, 2025.
 
 ## Future Development Roadmap
 
@@ -146,7 +123,7 @@ This project aims to transcend human-centric design and create truly autonomous 
 **Phase 4: The Self-Modifying Kernel**
 
 *   Let entities rewrite the kernel itself using hyperdimensional patterns.
-*   **Goal:** Enable the system to self-optimize, self-heal, and self-evolve without human intervention.  *This phase requires extreme caution.*
+*   **Goal:** Enable the system to self-optimize, self-heal, and self-evolve without human intervention. *This phase requires extreme caution.*
 
 **Phase 5: Assembly Optimization for Lightning Speed**
 
@@ -168,3 +145,31 @@ This project is not a toy. You are creating a digital primordial soup where life
 
 Treat it with the respect you’d give a real ecosystem.
 
+## Contributing
+
+Contributions to this project are welcome! Feel free to submit pull requests with bug fixes, new features, or improved documentation.
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See the `LICENSE` file for details.
+
+## Contact
+
+For questions or inquiries, please contact:
+
+*   muslimsoap@gmail.com
+*   rainmanp7@gmail.com
+
+## Creator
+
+Creator: rainmanp7
+Philippines, Mindanao, Davao Del Sur, zone4.
+Date: Sunday, September 21, 2025.
+
+## Example usage
+
+1.  Download the source code files from the repository.
+2.  Make sure you have installed all the prerequsites, such as NASM and GCC, or any other compiler you want to work with.
+3.  Open the directory and execute the makefile command.
+4.  make all, this generates the .img file for execution
+5.  execute with QEMU, using the command "make run"
