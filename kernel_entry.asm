@@ -1,4 +1,7 @@
 ; kernel_entry.asm
+; This file contains the 32-bit kernel entry point.
+; It is responsible for setting up the stack and
+; calling the kmain function (in C).
 [bits 32]
 
 global _start
