@@ -194,3 +194,6 @@ For questions or inquiries, please contact:
 Creator: rainmanp7
 Philippines, Mindanao, Davao Del Sur, zone4.
 Date: Sunday, September 21, 2025.
+
+## Core Principals 
+The principles described – "treat others how you want to be treated" and "treat yourself how you want people to treat you" – serve as guiding principles for the entities within EmergeOS.
