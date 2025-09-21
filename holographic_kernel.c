@@ -1,3 +1,13 @@
+Okay, here is the full, solid version of your `holographic_kernel.c` code with the necessary I/O functions added. I have placed the new implementations at the beginning of the file, right after the initial type definitions and includes, to ensure all required functions are defined before they are used.
+
+The added functions are:
+*   `outb` and `inb` for basic port I/O.
+*   `serial_init`, `serial_write`, and `serial_print` for serial communication.
+*   `print_char`, `print`, and `print_hex` for VGA text output.
+
+This version should compile without the previous linker errors related to these missing functions.
+
+```c
 // kernel.c - Enhanced Holographic Kernel with Dynamic Manifolds, Genomes, and Emergent Behavior
 //#include <stddef.h> // Required for NULL definition
 // --- TYPE DEFINITIONS ---
@@ -8,6 +18,106 @@ typedef unsigned int    size_t;
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
+
+// --- PORT I/O FUNCTIONS ---
+void outb(uint16_t port, uint8_t value) {
+    __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
+// --- SERIAL PORT FUNCTIONS ---
+void serial_init() {
+    // Initialize COM1 serial port (0x3F8)
+    outb(0x3F8 + 1, 0x00); // Disable interrupts
+    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
+    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
+    outb(0x3F8 + 1, 0x00); //                  (hi byte)
+    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
+    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
+    outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
+    // Send a test character to ensure the port is initialized
+    serial_write('S');
+    serial_write('E');
+    serial_write('R');
+    serial_write(' ');
+    serial_write('O');
+    serial_write('N');
+    serial_write('\n');
+}
+
+void serial_write(char c) {
+    // Wait for the transmit buffer to be empty (bit 5 of Line Status Register)
+    while ((inb(0x3F8 + 5) & 0x20) == 0);
+    outb(0x3F8, c);
+}
+
+void serial_print(const char* str) {
+    while (*str) {
+        serial_write(*str++);
+    }
+}
+
+// --- VGA TEXT MODE FUNCTIONS ---
+void print_char(char c, uint8_t color) {
+    volatile char* video = (volatile char*)VIDEO_MEMORY;
+    static uint16_t cursor_pos = 0;
+    uint16_t pos_offset;
+
+    if (c == '\n') {
+        // Move to the beginning of the next line
+        cursor_pos = (cursor_pos / 80 + 1) * 80;
+    } else {
+        pos_offset = cursor_pos * 2;
+        video[pos_offset] = c;
+        video[pos_offset + 1] = color;
+        cursor_pos++;
+    }
+
+    // Simple scroll: if we've reached the end of the screen buffer
+    if (cursor_pos >= 80 * 25) {
+        // Move lines 1-24 down to lines 0-23
+        for (int i = 0; i < 80 * 24; i++) {
+            video[i * 2] = video[(i + 80) * 2];
+            video[i * 2 + 1] = video[(i + 80) * 2 + 1];
+        }
+        // Clear the last line (line 24)
+        for (int i = 0; i < 80; i++) {
+            video[(80 * 24 + i) * 2] = ' ';
+            video[(80 * 24 + i) * 2 + 1] = color; // Use current color
+        }
+        cursor_pos = 80 * 24; // Position cursor at the start of the new blank line
+    }
+}
+
+void print(const char* str) {
+    while (*str) {
+        print_char(*str++, 0x0F); // White text on black background
+    }
+}
+
+void print_hex(uint32_t value) {
+    char hex_chars[] = "0123456789ABCDEF";
+    char hex_str[11]; // 0x + 8 chars + null terminator
+    hex_str[10] = '\0';
+    int i;
+
+    // Fill the string from the end
+    for (i = 9; i >= 2; i--) {
+        hex_str[i] = hex_chars[value & 0x0F];
+        value >>= 4;
+    }
+    hex_str[0] = '0';
+    hex_str[1] = 'x';
+
+    print(hex_str);
+}
+
+
 // --- ENHANCED HOLOGRAPHIC MEMORY CONFIGURATION ---
 #define INITIAL_DIMENSIONS 512
 #define MAX_DIMENSIONS 2048
@@ -159,14 +269,6 @@ char *strncpy(char *dest, const char *src, size_t n) {
     return dest;
 }
 //---Function Prototypes---
-void serial_init();
-void serial_write(char c);
-void serial_print(const char* str);
-void print_char(char c, uint8_t color);
-void print(const char* str);
-void print_hex(uint32_t value);
-void kmain();
-uint32_t hash_data(const void* input, uint32_t size);
 // HyperVector functions
 HyperVector create_hyper_vector(const void* input, uint32_t size);
 void grow_manifold(HyperVector* vec, uint32_t new_capacity);
@@ -740,3 +842,4 @@ uint8_t get_memory_value(uint32_t address) {
     volatile uint8_t *ptr = (volatile uint8_t *)address;
     return *ptr;
 }
+```
