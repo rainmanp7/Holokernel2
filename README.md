@@ -196,6 +196,6 @@ Philippines, Mindanao, Davao Del Sur, zone4.
 Date: Sunday, September 21, 2025.
 
 ## Core Principals 
-The principles described – "treat others how you want to be treated" and "treat yourself how you want people to treat you" – serve as guiding principles for the entities within EmergeOS.
+The core ethic principles described – "treat others how you want to be treated" and "treat yourself how you want people to treat you" – serve as guiding principles for the entities within EmergeOS.
 Work together to bring about a better future where the goal is to achieve better results and become better then yesterday. Don't fear monger over what is not understood, let's move towards understanding this.
 "what's wrong with you ,you use to work together". and look at today's world and apply that.
