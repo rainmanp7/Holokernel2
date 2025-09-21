@@ -9,8 +9,55 @@ typedef unsigned int    size_t;
 #define NULL ((void *)0)
 #endif
 
+// --- ENHANCED HOLOGRAPHIC MEMORY CONFIGURATION ---
+#define INITIAL_DIMENSIONS 512
+#define MAX_DIMENSIONS 2048
+#define HOLOGRAPHIC_MEMORY_BASE 0xA0000
+#define HOLOGRAPHIC_MEMORY_SIZE 0x10000
+#define MAX_MEMORY_ENTRIES 128
+#define MAX_ENTITIES 32
+#define INITIAL_ENTITIES 3
+#define MAX_ENTITY_DOMAINS 8
+#define MAX_THOUGHTS 64
+#define MAX_GENES_PER_ENTITY 16
+// --- VIDEO MEMORY ---
+// This definition was missing, causing the 'VIDEO_MEMORY' undeclared error.
+#define VIDEO_MEMORY 0xb8000
+// --- KERNEL HEAP MEMORY MANAGEMENT ---
+static uint8_t kernel_heap[0x20000]; // 128KB heap
+static uint32_t heap_offset = 0;
+void* kmalloc(size_t size) {
+    if (heap_offset + size >= sizeof(kernel_heap)) {
+        return NULL; // Out of memory
+    }
+    void* ptr = &kernel_heap[heap_offset];
+    heap_offset += (size + 7) & ~7; // 8-byte align
+    return ptr;
+}
+void kfree(void* ptr) {
+    // Simple allocator - no actual free for now
+    // In a real kernel, implement a proper allocator
+    // Suppress unused parameter warning
+    (void)ptr;
+}
+void* memcpy(void* dest, const void* src, size_t n) {
+    uint8_t* d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+    for (size_t i = 0; i < n; i++) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+void* memset(void* ptr, int value, size_t n) {
+    uint8_t* p = (uint8_t*)ptr;
+    for (size_t i = 0; i < n; i++) {
+        p[i] = (uint8_t)value;
+    }
+    return ptr;
+}
+
 // --- PORT I/O FUNCTIONS ---
-// These functions are essential for basic hardware communication and were missing definitions.
+// These were implicitly declared. Definitions must come before first use.
 void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -22,26 +69,7 @@ uint8_t inb(uint16_t port) {
 }
 
 // --- SERIAL PORT FUNCTIONS ---
-// Provides basic serial communication for debugging output.
-void serial_init() {
-    // Initialize COM1 serial port (0x3F8)
-    outb(0x3F8 + 1, 0x00); // Disable interrupts
-    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
-    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
-    outb(0x3F8 + 1, 0x00); //                  (hi byte)
-    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
-    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-    outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
-    // Send a test character to ensure the port is initialized
-    serial_write('S');
-    serial_write('E');
-    serial_write('R');
-    serial_write(' ');
-    serial_write('O');
-    serial_write('N');
-    serial_write('\n');
-}
-
+// Definitions must come before first use in serial_init.
 void serial_write(char c) {
     // Wait for the transmit buffer to be empty (bit 5 of Line Status Register)
     while ((inb(0x3F8 + 5) & 0x20) == 0);
@@ -54,8 +82,29 @@ void serial_print(const char* str) {
     }
 }
 
+void serial_init() {
+    // Initialize COM1 serial port (0x3F8)
+    outb(0x3F8 + 1, 0x00); // Disable interrupts
+    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
+    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
+    outb(0x3F8 + 1, 0x00); //                  (hi byte)
+    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
+    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
+    outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
+    // Send a test character to ensure the port is initialized
+    // Now that serial_write is defined above, this call is valid.
+    serial_write('S');
+    serial_write('E');
+    serial_write('R');
+    serial_write(' ');
+    serial_write('O');
+    serial_write('N');
+    serial_write('\n');
+}
+
+
 // --- VGA TEXT MODE FUNCTIONS ---
-// Provides basic text output to the screen.
+// Definitions must come before first use in kmain.
 void print_char(char c, uint8_t color) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
     static uint16_t cursor_pos = 0;
@@ -111,163 +160,10 @@ void print_hex(uint32_t value) {
 }
 
 
-// --- ENHANCED HOLOGRAPHIC MEMORY CONFIGURATION ---
-#define INITIAL_DIMENSIONS 512
-#define MAX_DIMENSIONS 2048
-#define HOLOGRAPHIC_MEMORY_BASE 0xA0000
-#define HOLOGRAPHIC_MEMORY_SIZE 0x10000
-#define MAX_MEMORY_ENTRIES 128
-#define MAX_ENTITIES 32
-#define INITIAL_ENTITIES 3
-#define MAX_ENTITY_DOMAINS 8
-#define MAX_THOUGHTS 64
-#define MAX_GENES_PER_ENTITY 16
-// --- VIDEO MEMORY ---
-#define VIDEO_MEMORY 0xb8000
-// --- KERNEL HEAP MEMORY MANAGEMENT ---
-static uint8_t kernel_heap[0x20000]; // 128KB heap
-static uint32_t heap_offset = 0;
-void* kmalloc(size_t size) {
-    if (heap_offset + size >= sizeof(kernel_heap)) {
-        return NULL; // Out of memory
-    }
-    void* ptr = &kernel_heap[heap_offset];
-    heap_offset += (size + 7) & ~7; // 8-byte align
-    return ptr;
-}
-void kfree(void* ptr) {
-    // Simple allocator - no actual free for now
-    // In a real kernel, implement a proper allocator
-}
-void* memcpy(void* dest, const void* src, size_t n) {
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-    return dest;
-}
-void* memset(void* ptr, int value, size_t n) {
-    uint8_t* p = (uint8_t*)ptr;
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)value;
-    }
-    return ptr;
-}
-// --- PHASE 1: Dynamic Hyperdimensional Manifold ---
-typedef struct {
-    float* data;           // Dynamically allocated array
-    uint32_t capacity;     // Current max dimensions
-    uint32_t active_dims;  // Actually used dimensions
-    uint32_t hash_sig;     // Hash of the active subspace
-    uint8_t valid;
-} HyperVector;
-// --- PHASE 2: Self-Modifying Genome Structure ---
-typedef struct Gene {
-    HyperVector pattern;          // The gene itself (e.g., a hardware signature)
-    struct Gene* next;            // Next gene in the sequence
-    uint32_t fitness;             // How well this gene works
-    uint8_t mutable;              // Can this gene be mutated?
-    char name[16];                // Debug name for the gene
-} Gene;
-// --- PHASE 3: Collective Consciousness ---
-struct CollectiveConsciousness {
-    HyperVector thought_space[MAX_THOUGHTS]; // Shared "mind"
-    uint32_t thought_count;
-    float global_coherence;       // How aligned thoughts are
-} collective;
-// --- Modified Structures ---
-typedef struct {
-    uint32_t task_id;
-    uint32_t data[4];
-    uint8_t valid;
-} Task;
-typedef struct {
-    HyperVector input_pattern;
-    HyperVector output_pattern;
-    uint32_t timestamp;
-    uint8_t valid;
-} MemoryEntry;
-// --- PHASE 4: Self-Modifying Kernel ---
-// Kernel patches are stored as hyperdimensional patterns in holographic memory
-typedef struct {
-    HyperVector pattern;      // The "before" state (e.g., a function signature)
-    HyperVector replacement;  // The "after" state (e.g., a mutated function)
-    uint32_t address;         // Memory address to patch
-    uint8_t applied;          // Has this patch been applied?
-} KernelPatch;
-// --- ENHANCED: Entity Structure with Dynamic Genome ---
-struct Entity {
-    uint32_t id;
-    HyperVector state;
-    Gene* genome;                 // Dynamic genome (linked list of genes)
-    uint32_t gene_count;
-    uint32_t age;
-    uint32_t interaction_count;
-    uint8_t is_active;
-    float specialization_scores[MAX_ENTITY_DOMAINS];
-    float resource_allocation;
-    float confidence;
-    char domain_name[32];
-    // Task & Path Assignment
-    HyperVector task_vector;
-    uint32_t path_id;
-    float task_alignment;
-    // Evolution & Fitness
-    uint32_t fitness_score;
-    uint32_t spawn_count;
-    uint8_t marked_for_gc;
-    uint8_t is_mutant;
-    uint32_t mutation_rate;       // Entities control their own evolution (0-1000)
-};
-struct HardwareInfo {
-    char cpu_vendor[13];
-    uint32_t cpu_features;
-    uint32_t memory_kb;
-    int device_count;
-};
-struct HolographicSystem {
-    MemoryEntry memory_pool[MAX_MEMORY_ENTRIES];
-    uint32_t memory_count;
-    uint32_t global_timestamp;
-} holo_system;
-struct Entity entity_pool[MAX_ENTITIES];
-uint32_t active_entity_count = 0;
-// --- Enhanced Math Functions ---
-float sqrtf(float x) {
-    if (x <= 0.0f) return 0.0f;
-    float x_half = 0.5f * x;
-    int i = *(int*)&x;
-    i = 0x5f3759df - (i >> 1);
-    x = *(float*)&i;
-    x = x * (1.5f - x_half * x * x);
-    return 1.0f / x;
-}
-uint32_t check_protected_mode() {
-    uint32_t cr0;
-    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
-    return cr0 & 0x1;
-}
-size_t strlen(const char *str) {
-    const char *s;
-    for (s = str; *s; ++s);
-    return (s - str);
-}
-char *strncpy(char *dest, const char *src, size_t n) {
-    size_t i;
-    for (i = 0; i < n && src[i] != '\0'; i++)
-        dest[i] = src[i];
-    for ( ; i < n; i++)
-        dest[i] = '\0';
-    return dest;
-}
 //---Function Prototypes---
-void serial_init();
-void serial_write(char c);
-void serial_print(const char* str);
-void print_char(char c, uint8_t color);
-void print(const char* str);
-void print_hex(uint32_t value);
+// Keep prototypes for functions defined later if needed for complex call graphs.
+// For functions defined above and used below, explicit prototypes are less critical
+// but good practice. The ones below are likely for functions defined much later.
 void kmain();
 uint32_t hash_data(const void* input, uint32_t size);
 // HyperVector functions
@@ -309,13 +205,16 @@ void apply_kernel_patch(KernelPatch* patch) {
     // This requires careful handling of memory protection (e.g., using `__asm__` to disable writes)
     // For safety in this example, we'll assume the target address is within the kernel heap
     // In a real system, you'd need to disable write protection on the kernel text section.
-    if (patch->replacement.active_dims * sizeof(float) > 1024) {
+    // Fix signed/unsigned comparison warning
+    uint32_t total_size = patch->replacement.active_dims * sizeof(float);
+    if (total_size > 1024) {
         serial_print("[ERROR] Patch too large for safety check.\n");
         return;
     }
     uint8_t* target = (uint8_t*)patch->address;
-    for (int i = 0; i < patch->replacement.active_dims * sizeof(float); i++) {
-        if (i < (int)(patch->replacement.capacity * sizeof(float))) {
+    // Fix signed/unsigned comparison warning
+    for (uint32_t i = 0; i < total_size; i++) {
+        if (i < (patch->replacement.capacity * sizeof(float))) {
             target[i] = ((uint8_t*)patch->replacement.data)[i];
         } else {
             break; // Avoid writing beyond the active dimensions
@@ -368,7 +267,8 @@ void kmain() {
     initialize_emergent_entities();
     // Assign Initial Task Vectors with dynamic expansion
     HyperVector path_vector = create_hyper_vector("network_io_path", strlen("network_io_path") + 1);
-    for (int i = 0; i < active_entity_count && i < 2; i++) {
+    // Fix signed/unsigned comparison warning
+    for (uint32_t i = 0; i < active_entity_count && i < 2; i++) {
         entity_pool[i].task_vector = path_vector;
         entity_pool[i].path_id = 0xA1;
         entity_pool[i].mutation_rate = 100; // 10% mutation rate
@@ -416,7 +316,8 @@ HyperVector create_hyper_vector(const void* input, uint32_t size) {
     memset(vec.data, 0, vec.capacity * sizeof(float));
     uint32_t seed = hash_data(input, size);
     vec.hash_sig = seed;
-    for (int i = 0; i < vec.capacity; i++) {
+    // Fix signed/unsigned comparison warning
+    for (uint32_t i = 0; i < vec.capacity; i++) {
         seed = (seed * 1103515245 + 12345) & 0x7fffffff;
         if ((seed % 10) == 0) {
             vec.data[i] = ((float)((seed % 2000) - 1000)) / 1000.0f;
@@ -497,6 +398,7 @@ void mutate_gene(Gene* gene, float rate) {
     if (!gene || !gene->mutable || !gene->pattern.valid) return;
     uint32_t mutations = 0;
     for (uint32_t i = 0; i < gene->pattern.active_dims; i++) {
+        // Fix potential signed/unsigned comparison (though % 1000 on uint32_t is safe)
         if (((holo_system.global_timestamp * 1103515245 + i) % 1000) < (uint32_t)(rate * 1000)) {
             gene->pattern.data[i] += ((float)(((holo_system.global_timestamp + i) % 2000) - 1000)) / 10000.0f;
             gene->fitness = 0; // Reset fitness after mutation
@@ -730,6 +632,7 @@ struct Entity* spawn_entity() {
 }
 // --- ENHANCED: Update Loop with Hyperdimensional Evolution ---
 void update_entities() {
+    // Use uint8_t for loop counters interacting with uint32_t variables to avoid warnings
     uint8_t next_active[MAX_ENTITIES] = {0};
     HyperVector next_state[MAX_ENTITIES];
     char next_domain[MAX_ENTITIES][32];
@@ -737,7 +640,8 @@ void update_entities() {
     uint32_t next_path_id[MAX_ENTITIES];
     float next_task_alignment[MAX_ENTITIES];
     serial_print("[EVOLUTION] Starting hyperdimensional update cycle...\n");
-    for (int i = 0; i < active_entity_count; i++) {
+    // Fix signed/unsigned comparison warning
+    for (uint32_t i = 0; i < active_entity_count; i++) {
         struct Entity* entity = &entity_pool[i];
         next_active[i] = entity->is_active;
         next_state[i] = entity->state;
@@ -748,9 +652,10 @@ void update_entities() {
         next_task_alignment[i] = entity->task_alignment;
         entity->age++;
         // Count active neighbors
-        int neighbor_active = 0;
-        int prev_idx = (i == 0) ? (active_entity_count - 1) : (i - 1);
-        int next_idx = (i == active_entity_count - 1) ? 0 : (i + 1);
+        uint32_t neighbor_active = 0;
+        // Fix signed/unsigned comparison warnings and logic
+        uint32_t prev_idx = (i == 0) ? (active_entity_count - 1) : (i - 1);
+        uint32_t next_idx = (i == active_entity_count - 1) ? 0 : (i + 1);
         if (entity_pool[prev_idx].is_active) neighbor_active++;
         if (entity_pool[next_idx].is_active) neighbor_active++;
         // Listen to collective consciousness
@@ -815,7 +720,8 @@ void update_entities() {
         // --- END PHASE 4 ---
     }
     // Apply the changes to the entity pool
-    for (int i = 0; i < active_entity_count; i++) {
+    // Fix signed/unsigned comparison warning
+    for (uint32_t i = 0; i < active_entity_count; i++) {
         entity_pool[i].is_active = next_active[i];
         entity_pool[i].state = next_state[i];
         strncpy(entity_pool[i].domain_name, next_domain[i], 31);
