@@ -1,13 +1,3 @@
-Okay, here is the full, solid version of your `holographic_kernel.c` code with the necessary I/O functions added. I have placed the new implementations at the beginning of the file, right after the initial type definitions and includes, to ensure all required functions are defined before they are used.
-
-The added functions are:
-*   `outb` and `inb` for basic port I/O.
-*   `serial_init`, `serial_write`, and `serial_print` for serial communication.
-*   `print_char`, `print`, and `print_hex` for VGA text output.
-
-This version should compile without the previous linker errors related to these missing functions.
-
-```c
 // kernel.c - Enhanced Holographic Kernel with Dynamic Manifolds, Genomes, and Emergent Behavior
 //#include <stddef.h> // Required for NULL definition
 // --- TYPE DEFINITIONS ---
@@ -20,6 +10,7 @@ typedef unsigned int    size_t;
 #endif
 
 // --- PORT I/O FUNCTIONS ---
+// These functions are essential for basic hardware communication and were missing definitions.
 void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -31,6 +22,7 @@ uint8_t inb(uint16_t port) {
 }
 
 // --- SERIAL PORT FUNCTIONS ---
+// Provides basic serial communication for debugging output.
 void serial_init() {
     // Initialize COM1 serial port (0x3F8)
     outb(0x3F8 + 1, 0x00); // Disable interrupts
@@ -63,6 +55,7 @@ void serial_print(const char* str) {
 }
 
 // --- VGA TEXT MODE FUNCTIONS ---
+// Provides basic text output to the screen.
 void print_char(char c, uint8_t color) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
     static uint16_t cursor_pos = 0;
@@ -269,6 +262,14 @@ char *strncpy(char *dest, const char *src, size_t n) {
     return dest;
 }
 //---Function Prototypes---
+void serial_init();
+void serial_write(char c);
+void serial_print(const char* str);
+void print_char(char c, uint8_t color);
+void print(const char* str);
+void print_hex(uint32_t value);
+void kmain();
+uint32_t hash_data(const void* input, uint32_t size);
 // HyperVector functions
 HyperVector create_hyper_vector(const void* input, uint32_t size);
 void grow_manifold(HyperVector* vec, uint32_t new_capacity);
@@ -842,4 +843,3 @@ uint8_t get_memory_value(uint32_t address) {
     volatile uint8_t *ptr = (volatile uint8_t *)address;
     return *ptr;
 }
-```
