@@ -103,40 +103,6 @@ static size_t heap_get_free_space(void) {
     return sizeof(kernel_heap) - heap_offset;
 }
 
-static void* kmalloc(size_t size) {
-    if (heap_offset + size >= sizeof(kernel_heap)) {
-        // --- CRITICAL: LOG THE FAILURE ---
-        serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
-        print_hex(size);
-        serial_print(" bytes. Free space: ");
-        print_hex(heap_get_free_space());
-        serial_print(" bytes.\n");
-        return NULL; // Out of memory
-    }
-    void* ptr = &kernel_heap[heap_offset];
-    heap_offset += (size + 7) & ~7; // 8-byte align
-    return ptr;
-}
-static void kfree(void* ptr) {
-    // Simple allocator - no actual free for now
-    // In a real kernel, implement a proper allocator
-    (void)ptr; // Suppress unused parameter warning
-}
-static void* memcpy(void* dest, const void* src, size_t n) {
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-    return dest;
-}
-static void* memset(void* ptr, int value, size_t n) {
-    uint8_t* p = (uint8_t*)ptr;
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)value;
-    }
-    return ptr;
-}
 // --- PORT I/O FUNCTIONS (static inline) ---
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -146,36 +112,22 @@ static inline uint8_t inb(uint16_t port) {
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
+
 // --- SERIAL PORT FUNCTIONS ---
 static void serial_write(char c) {
     // Wait for the transmit buffer to be empty (bit 5 of Line Status Register)
     while ((inb(0x3F8 + 5) & 0x20) == 0);
     outb(0x3F8, c);
 }
+
+// --- FIXED: Define serial_print BEFORE kmalloc ---
 static void serial_print(const char* str) {
     while (*str) {
         serial_write(*str++);
     }
 }
-static void serial_init(void) {
-    // Initialize COM1 serial port (0x3F8)
-    outb(0x3F8 + 1, 0x00); // Disable interrupts
-    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
-    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
-    outb(0x3F8 + 1, 0x00); //                  (hi byte)
-    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
-    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-// IRQ DISABLED
-    //outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
-    // Send a test character to ensure the port is initialized
-    serial_write('S');
-    serial_write('E');
-    serial_write('R');
-    serial_write(' ');
-    serial_write('O');
-    serial_write('N');
-    serial_write('\n');
-}
+// --- END FIXED SECTION ---
+
 // --- VGA TEXT MODE FUNCTIONS ---
 static void print_char(char c, uint8_t color) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
@@ -205,11 +157,14 @@ static void print_char(char c, uint8_t color) {
         cursor_pos = 80 * 24; // Position cursor at the start of the new blank line
     }
 }
+
 static void print(const char* str) {
     while (*str) {
         print_char(*str++, 0x0F); // White text on black background
     }
 }
+
+// --- FIXED: Define print_hex BEFORE kmalloc ---
 static void print_hex(uint32_t value) {
     char hex_chars[] = "0123456789ABCDEF";
     char hex_str[11]; // 0x + 8 chars + null terminator
@@ -224,6 +179,66 @@ static void print_hex(uint32_t value) {
     hex_str[1] = 'x';
     print(hex_str);
 }
+// --- END FIXED SECTION ---
+
+static void* kmalloc(size_t size) {
+    if (heap_offset + size >= sizeof(kernel_heap)) {
+        // --- CRITICAL: LOG THE FAILURE ---
+        serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
+        print_hex(size);
+        serial_print(" bytes. Free space: ");
+        print_hex(heap_get_free_space());
+        serial_print(" bytes.\n");
+        return NULL; // Out of memory
+    }
+    void* ptr = &kernel_heap[heap_offset];
+    heap_offset += (size + 7) & ~7; // 8-byte align
+    return ptr;
+}
+
+static void kfree(void* ptr) {
+    // Simple allocator - no actual free for now
+    // In a real kernel, implement a proper allocator
+    (void)ptr; // Suppress unused parameter warning
+}
+
+static void* memcpy(void* dest, const void* src, size_t n) {
+    uint8_t* d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+    for (size_t i = 0; i < n; i++) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+
+static void* memset(void* ptr, int value, size_t n) {
+    uint8_t* p = (uint8_t*)ptr;
+    for (size_t i = 0; i < n; i++) {
+        p[i] = (uint8_t)value;
+    }
+    return ptr;
+}
+
+static void serial_init(void) {
+    // Initialize COM1 serial port (0x3F8)
+    outb(0x3F8 + 1, 0x00); // Disable interrupts
+    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
+    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
+    outb(0x3F8 + 1, 0x00); //                  (hi byte)
+    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
+    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
+// IRQ DISABLED
+    //outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
+    // Send a test character to ensure the port is initialized
+    serial_write('S');
+    serial_write('E');
+    serial_write('R');
+    serial_write(' ');
+    serial_write('O');
+    serial_write('N');
+    serial_write('\n');
+}
+
 // --- Enhanced Math Functions ---
 static float sqrtf(float x) {
     if (x <= 0.0f) return 0.0f;
@@ -238,11 +253,13 @@ static float sqrtf(float x) {
     x = x * (1.5f - x_half * x * x);
     return 1.0f / x;
 }
+
 static size_t strlen(const char *str) {
     const char *s;
     for (s = str; *s; ++s);
     return (s - str);
 }
+
 static char *strncpy(char *dest, const char *src, size_t n) {
     size_t i;
     for (i = 0; i < n && src[i] != '\0'; i++)
@@ -251,6 +268,7 @@ static char *strncpy(char *dest, const char *src, size_t n) {
         dest[i] = '\0';
     return dest;
 }
+
 //---Function Prototypes---
 void kmain(void) __attribute__((noreturn));
 static uint32_t hash_data(const void* input, uint32_t size);
@@ -300,6 +318,7 @@ static char next_domain[MAX_ENTITIES][32];
 static HyperVector next_task_vector[MAX_ENTITIES];
 static uint32_t next_path_id[MAX_ENTITIES];
 static float next_task_alignment[MAX_ENTITIES];
+
 //---Kernel starting point---
 void kmain(void) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
@@ -348,6 +367,7 @@ __asm__ volatile ("cli"); // Disable interrupts
         __asm__ volatile("hlt");
     }
 }
+
 //---Hash function (FNV-1a)---
 static uint32_t hash_data(const void* input, uint32_t size) {
     const uint8_t* data = (const uint8_t*)input;
@@ -358,6 +378,7 @@ static uint32_t hash_data(const void* input, uint32_t size) {
     }
     return hash;
 }
+
 //---PHASE 1: Dynamic Hyperdimensional Manifold Functions---
 static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     HyperVector vec = {0};
@@ -386,6 +407,7 @@ static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     vec.hash_sig = hash_data(vec.data, vec.active_dims * sizeof(float));
     return vec;
 }
+
 static void grow_manifold(HyperVector* vec, uint32_t new_capacity) {
     if (!vec || !vec->valid || new_capacity <= vec->capacity || new_capacity > MAX_DIMENSIONS) {
         return;
@@ -408,6 +430,7 @@ static void grow_manifold(HyperVector* vec, uint32_t new_capacity) {
     print_hex(new_capacity);
     serial_print(" dimensions\n");
 }
+
 static void destroy_hyper_vector(HyperVector* vec) {
     if (vec && vec->data) {
         kfree(vec->data);
@@ -415,6 +438,7 @@ static void destroy_hyper_vector(HyperVector* vec) {
         vec->valid = 0;
     }
 }
+
 static float compute_similarity(HyperVector* a, HyperVector* b) {
     if (!a || !b || !a->valid || !b->valid || !a->data || !b->data) {
         return 0.0f;
@@ -432,6 +456,7 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
     mag_b = (mag_b > 0) ? sqrtf(mag_b) : 1.0f;
     return (mag_a * mag_b > 0) ? (dot / (mag_a * mag_b)) : 0.0f;
 }
+
 static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
     if (!dest || !src || !dest->valid || !src->valid) return;
     uint32_t min_dims = (dest->active_dims < src->active_dims) ? dest->active_dims : src->active_dims;
@@ -440,6 +465,7 @@ static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
     }
     dest->hash_sig = hash_data(dest->data, dest->active_dims * sizeof(float));
 }
+
 //---PHASE 2: Self-Modifying Genome Functions---
 static struct Gene* create_gene(const char* name, HyperVector pattern) {
     struct Gene* gene = (struct Gene*)kmalloc(sizeof(struct Gene));
@@ -456,6 +482,7 @@ static struct Gene* create_gene(const char* name, HyperVector pattern) {
     gene->name[15] = '\0';
     return gene;
 }
+
 static void mutate_gene(struct Gene* gene, float rate) {
     if (!gene || !gene->mutable || !gene->pattern.valid) return;
     uint32_t mutations = 0;
@@ -475,6 +502,7 @@ static void mutate_gene(struct Gene* gene, float rate) {
         serial_print(" dimensions\n");
     }
 }
+
 static struct Gene* invent_gene(HyperVector pattern) {
     struct Gene* new_gene = (struct Gene*)kmalloc(sizeof(struct Gene));
     if (!new_gene) return NULL;
@@ -486,6 +514,7 @@ static struct Gene* invent_gene(HyperVector pattern) {
     new_gene->name[15] = '\0';
     return new_gene;
 }
+
 static void add_gene_to_entity(struct Entity* entity, struct Gene* gene) {
     if (!entity || !gene || entity->gene_count >= MAX_GENES_PER_ENTITY) return;
     // Add to front of linked list
@@ -498,6 +527,7 @@ static void add_gene_to_entity(struct Entity* entity, struct Gene* gene) {
     print_hex(entity->id);
     serial_print("\n");
 }
+
 static void destroy_genome(struct Gene* genome) {
     struct Gene* current = genome;
     while (current) {
@@ -507,6 +537,7 @@ static void destroy_genome(struct Gene* genome) {
         current = next;
     }
 }
+
 //---PHASE 3: Collective Consciousness Functions---
 static void initialize_collective_consciousness(void) {
     collective.thought_count = 0;
@@ -516,6 +547,7 @@ static void initialize_collective_consciousness(void) {
     }
     serial_print("[COLLECTIVE] Consciousness initialized\n");
 }
+
 static void broadcast_thought(HyperVector* thought) {
     if (!thought || !thought->valid) return;
     if (collective.thought_count >= MAX_THOUGHTS) {
@@ -534,6 +566,7 @@ static void broadcast_thought(HyperVector* thought) {
     print_hex((uint32_t)(coherence * 1000));
     serial_print("\n");
 }
+
 static float compute_coherence(HyperVector* thought) {
     if (collective.thought_count == 0) return 1.0f;
     float coherence = 0.0f;
@@ -542,6 +575,7 @@ static float compute_coherence(HyperVector* thought) {
     }
     return coherence / collective.thought_count;
 }
+
 //---Enhanced Holographic Memory Functions---
 static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
     if (holo_system.memory_count >= MAX_MEMORY_ENTRIES) {
@@ -561,6 +595,7 @@ static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
     entry->valid = 1;
     holo_system.memory_count++;
 }
+
 static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     if (holo_system.memory_count > 0) {
         for (uint32_t i = holo_system.memory_count - 1; i < MAX_MEMORY_ENTRIES; i--) {
@@ -572,6 +607,7 @@ static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     }
     return NULL;
 }
+
 static void initialize_holographic_memory(void) {
     print("Setting up hyperdimensional memory pool...\n");
     holo_system.memory_count = 0;
@@ -585,6 +621,7 @@ static void initialize_holographic_memory(void) {
     print_hex(MAX_DIMENSIONS);
     print(".\n");
 }
+
 static void load_initial_genome_vocabulary(void) {
     const char* vocab[] = {
         "ACTION_PRODUCE", "ACTION_CONSUME", "ACTION_SHARE",
@@ -605,6 +642,7 @@ static void load_initial_genome_vocabulary(void) {
     }
     serial_print("Enhanced genome vocabulary loaded into collective.\n");
 }
+
 static void initialize_emergent_entities(void) {
     serial_print("Initializing emergent entity pool with dynamic genomes...\n");
     HyperVector simple_genome_rule = create_hyper_vector("GENOME_ADAPTIVE", strlen("GENOME_ADAPTIVE") + 1);
@@ -657,6 +695,7 @@ static void initialize_emergent_entities(void) {
     print_hex(active_entity_count);
     serial_print(" adaptive entities with dynamic genomes.\n");
 }
+
 static struct Entity* spawn_entity(void) {
     if (active_entity_count >= MAX_ENTITIES) {
         serial_print("Cannot spawn: Entity pool full.\n");
@@ -693,6 +732,7 @@ static struct Entity* spawn_entity(void) {
     serial_print(" with dynamic genome.\n");
     return new_entity;
 }
+
 // --- ENHANCED: Update Loop with Hyperdimensional Evolution ---
 static void update_entities(void) {
     // Clear the arrays before use
@@ -803,25 +843,30 @@ static void update_entities(void) {
         entity_pool[i].task_alignment = next_task_alignment[i];
     }
 }
+
 static void render_entities_to_vga(void) {
     // This is a placeholder for rendering the state of entities to the VGA screen.
     // In a real system, this would visualize the collective consciousness or entity states.
     // For now, just print a debug message.
     serial_print("[RENDER] Updating VGA display with entity states.\n");
 }
+
 static void probe_hardware(void) {
     // Placeholder for hardware probing. In a real system, this would gather CPU, memory, device info.
     // The current implementation in the blueprint is not used in the update loop.
     serial_print("[PROBE] Hardware probe initiated.\n");
 }
+
 static void set_memory_value(uint32_t address, uint8_t value) {
     volatile uint8_t *ptr = (volatile uint8_t *)address;
     *ptr = value;
 }
+
 static uint8_t get_memory_value(uint32_t address) {
     volatile uint8_t *ptr = (volatile uint8_t *)address;
     return *ptr;
 }
+
 // --- PHASE 4: Self-Modifying Kernel Functions ---
 static void apply_kernel_patch(KernelPatch* patch) {
     if (patch->applied) return;
@@ -847,6 +892,7 @@ static void apply_kernel_patch(KernelPatch* patch) {
     print_hex(patch->address);
     serial_print("\n");
 }
+
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address) {
     if (!entity || !old_pattern || !new_pattern) return;
     KernelPatch patch = {0};
