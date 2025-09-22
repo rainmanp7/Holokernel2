@@ -293,11 +293,11 @@ static void initialize_holographic_memory(void);
 static void load_initial_genome_vocabulary(void);
 // Entity management functions
 static void initialize_emergent_entities(void);
-static struct Entity* spawn_entity(void) __attribute__((unused));
+static struct Entity* spawn_entity(void);
 static void update_entities(void);
 static void render_entities_to_vga(void);
 // Hardware probing functions
-static void probe_hardware(void) __attribute__((unused));
+static void probe_hardware(void);
 // Memory access functions
 static void set_memory_value(uint32_t address, uint8_t value);
 static uint8_t get_memory_value(uint32_t address);
@@ -681,7 +681,7 @@ static void initialize_emergent_entities(void) {
     serial_print(" adaptive entities with dynamic genomes.\n");
 }
 
-static struct Entity* spawn_entity(void) __attribute__((unused)) {
+static struct Entity* spawn_entity(void) {
     if (active_entity_count >= MAX_ENTITIES) {
         serial_print("Cannot spawn: Entity pool full.\n");
         return NULL;
@@ -822,7 +822,7 @@ static void render_entities_to_vga(void) {
     serial_print("[RENDER] Updating VGA display with entity states.\n");
 }
 
-static void probe_hardware(void) __attribute__((unused)) {
+static void probe_hardware(void) {
     // Placeholder for hardware probing. In a real system, this would gather CPU, memory, device info.
     // The current implementation in the blueprint is not used in the update loop.
     serial_print("[PROBE] Hardware probe initiated.\n");
