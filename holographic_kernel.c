@@ -106,7 +106,7 @@ struct HolographicSystem {
 };
 
 // --- KERNEL HEAP MEMORY MANAGEMENT ---
-static uint8_t kernel_heap[0x20000]; // 128KB heap
+static uint8_t kernel_heap[0xC0000]; // 768KB heap
 static uint32_t heap_offset = 0;
 
 static void* kmalloc(size_t size) {
