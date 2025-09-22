@@ -1,4 +1,6 @@
 // kernel.c - Enhanced Holographic Kernel with Dynamic Manifolds, Genomes, and Emergent Behavior
+// IRQ AND UART DISABLED ON BOOT kmain
+// To stop crashing memory conflicts.
 // --- TYPE DEFINITIONS ---
 typedef unsigned char   uint8_t;
 typedef unsigned short  uint16_t;
@@ -171,7 +173,8 @@ static void serial_init(void) {
     outb(0x3F8 + 1, 0x00); //                  (hi byte)
     outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
     outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-    outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
+// IRQ DISABLED
+    //outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
     // Send a test character to ensure the port is initialized
     serial_write('S');
     serial_write('E');
@@ -334,6 +337,7 @@ void kmain(void) {
     video[9] = 0x0F;
     serial_init();
     serial_print("DEBUG: Serial initialized, HyperKernel starting!\n");
+__asm__ volatile ("cli"); // Disable interrupts
     serial_print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...\n");
     print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...\n");
     print("Initializing dynamic hyperdimensional memory system...\n");
