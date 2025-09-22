@@ -106,6 +106,25 @@ static size_t heap_get_free_space(void) {
     return KERNEL_HEAP_SIZE - heap_offset;
 }
 
+// --- NEW: DEEP COPY FUNCTION FOR HYPERVECTOR ---
+static HyperVector copy_hyper_vector(const HyperVector* src) {
+    HyperVector dst = {0};
+    if (!src || !src->valid || !src->data) {
+        return dst; // Return invalid
+    }
+    dst.capacity = src->capacity;
+    dst.active_dims = src->active_dims;
+    dst.data = (float*)kmalloc(dst.capacity * sizeof(float));
+    if (!dst.data) {
+        dst.valid = 0;
+        return dst;
+    }
+    memcpy(dst.data, src->data, dst.capacity * sizeof(float));
+    dst.hash_sig = src->hash_sig;
+    dst.valid = 1;
+    return dst;
+}
+
 // --- PORT I/O FUNCTIONS (static inline) ---
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -129,6 +148,39 @@ static void serial_print(const char* str) {
         serial_write(*str++);
     }
 }
+
+// --- FIXED: Define print BEFORE print_hex ---
+static void print(const char* str) {
+    volatile char* video = (volatile char*)VIDEO_MEMORY;
+    static uint16_t cursor_pos = 0;
+    uint16_t pos_offset;
+    while (*str) {
+        if (*str == '\n') {
+            cursor_pos = (cursor_pos / 80 + 1) * 80;
+        } else {
+            pos_offset = cursor_pos * 2;
+            video[pos_offset] = *str;
+            video[pos_offset + 1] = 0x0F; // White on black
+            cursor_pos++;
+        }
+        str++;
+    }
+    // Simple scroll: if we've reached the end of the screen buffer
+    if (cursor_pos >= 80 * 25) {
+        // Move lines 1-24 down to lines 0-23
+        for (size_t i = 0; i < 80 * 24; i++) {
+            video[i * 2] = video[(i + 80) * 2];
+            video[i * 2 + 1] = video[(i + 80) * 2 + 1];
+        }
+        // Clear the last line (line 24)
+        for (size_t i = 0; i < 80; i++) {
+            video[(80 * 24 + i) * 2] = ' ';
+            video[(80 * 24 + i) * 2 + 1] = 0x0F;
+        }
+        cursor_pos = 80 * 24;
+    }
+}
+
 // --- FIXED: Define print_hex BEFORE kmalloc ---
 static void print_hex(uint32_t value) {
     char hex_chars[] = "0123456789ABCDEF";
@@ -202,42 +254,6 @@ static void serial_init(void) {
     serial_write('O');
     serial_write('N');
     serial_write('\n');
-}
-
-// --- VGA TEXT MODE FUNCTIONS ---
-static void print_char(char c, uint8_t color) {
-    volatile char* video = (volatile char*)VIDEO_MEMORY;
-    static uint16_t cursor_pos = 0;
-    uint16_t pos_offset;
-    if (c == '\n') {
-        // Move to the beginning of the next line
-        cursor_pos = (cursor_pos / 80 + 1) * 80;
-    } else {
-        pos_offset = cursor_pos * 2;
-        video[pos_offset] = c;
-        video[pos_offset + 1] = color;
-        cursor_pos++;
-    }
-    // Simple scroll: if we've reached the end of the screen buffer
-    if (cursor_pos >= 80 * 25) {
-        // Move lines 1-24 down to lines 0-23
-        for (size_t i = 0; i < 80 * 24; i++) {
-            video[i * 2] = video[(i + 80) * 2];
-            video[i * 2 + 1] = video[(i + 80) * 2 + 1];
-        }
-        // Clear the last line (line 24)
-        for (size_t i = 0; i < 80; i++) {
-            video[(80 * 24 + i) * 2] = ' ';
-            video[(80 * 24 + i) * 2 + 1] = color; // Use current color
-        }
-        cursor_pos = 80 * 24; // Position cursor at the start of the new blank line
-    }
-}
-
-static void print(const char* str) {
-    while (*str) {
-        print_char(*str++, 0x0F); // White text on black background
-    }
 }
 
 // --- Enhanced Math Functions ---
@@ -346,13 +362,16 @@ __asm__ volatile ("cli"); // Disable interrupts
     // Assign Initial Task Vectors with dynamic expansion
     HyperVector path_vector = create_hyper_vector("network_io_path", strlen("network_io_path") + 1);
     for (uint32_t i = 0; i < active_entity_count && i < 2; i++) {
-        entity_pool[i].task_vector = path_vector;
+        // --- DEEP COPY: No shared pointers ---
+        entity_pool[i].task_vector = copy_hyper_vector(&path_vector);
         entity_pool[i].path_id = 0xA1;
         entity_pool[i].mutation_rate = 100; // 10% mutation rate
         serial_print("[TASK] Assigned dynamic path 0xA1 to entity ");
         print_hex(entity_pool[i].id);
         serial_print("\n");
     }
+    // --- CLEANUP: Destroy temporary path_vector ---
+    destroy_hyper_vector(&path_vector);
     print("Hyperdimensional Kernel with Dynamic Genomes Initialized!\n");
     print("System entering emergent entity loop with collective consciousness...\n");
     serial_print("[BOOT] HyperKernel fully initialized. Evolution engine online.\n");
@@ -418,12 +437,14 @@ static void grow_manifold(HyperVector* vec, uint32_t new_capacity) {
         serial_print("[ERROR] Failed to grow manifold - out of memory\n");
         return;
     }
-    // Copy existing data
-    memcpy(new_data, vec->data, vec->capacity * sizeof(float));
+    // Copy existing data (only if old data exists)
+    if (vec->data) {
+        memcpy(new_data, vec->data, vec->capacity * sizeof(float));
+        // Free the old data to prevent memory leak
+        kfree(vec->data);
+    }
     // Zero out new dimensions
     memset(new_data + vec->capacity, 0, (new_capacity - vec->capacity) * sizeof(float));
-    // Note: In a real kernel, we'd free the old data
-    // kfree(vec->data);
     vec->data = new_data;
     vec->capacity = new_capacity;
     vec->hash_sig = hash_data(vec->data, vec->active_dims * sizeof(float));
@@ -455,7 +476,9 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
     }
     mag_a = (mag_a > 0) ? sqrtf(mag_a) : 1.0f;
     mag_b = (mag_b > 0) ? sqrtf(mag_b) : 1.0f;
-    return (mag_a * mag_b > 0) ? (dot / (mag_a * mag_b)) : 0.0f;
+    // --- FIX: Prevent division by near-zero ---
+    if (mag_a * mag_b < 1e-10f) return 0.0f;
+    return (dot / (mag_a * mag_b));
 }
 
 static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
@@ -475,7 +498,8 @@ static struct Gene* create_gene(const char* name, HyperVector pattern) {
         serial_print("[ERROR] create_gene: Out of memory!\n");
         return NULL;
     }
-    gene->pattern = pattern;
+    // --- FIX: DEEP COPY THE PATTERN ---
+    gene->pattern = copy_hyper_vector(&pattern);
     gene->next = NULL;
     gene->fitness = 0;
     gene->mutable = 1;
@@ -507,7 +531,8 @@ static void mutate_gene(struct Gene* gene, float rate) {
 static struct Gene* invent_gene(HyperVector pattern) {
     struct Gene* new_gene = (struct Gene*)kmalloc(sizeof(struct Gene));
     if (!new_gene) return NULL;
-    new_gene->pattern = pattern;
+    // --- FIX: DEEP COPY THE PATTERN ---
+    new_gene->pattern = copy_hyper_vector(&pattern);
     new_gene->next = NULL;
     new_gene->fitness = 0;
     new_gene->mutable = 1;
@@ -559,8 +584,9 @@ static void broadcast_thought(HyperVector* thought) {
         }
         collective.thought_count = MAX_THOUGHTS - 1;
     }
-    collective.thought_space[collective.thought_count] = *thought;
-    collective.thought_space[collective.thought_count].valid = 1; // Mark as valid
+    // --- FIX: DEEP COPY THE THOUGHT ---
+    collective.thought_space[collective.thought_count] = copy_hyper_vector(thought);
+    collective.thought_space[collective.thought_count].valid = 1; // MARK AS VALID
     collective.thought_count++;
     float coherence = compute_coherence(thought);
     collective.global_coherence = (collective.global_coherence * 9.0f + coherence) / 10.0f;
@@ -574,13 +600,13 @@ static float compute_coherence(HyperVector* thought) {
     float coherence = 0.0f;
     uint32_t valid_count = 0;
     for (uint32_t i = 0; i < collective.thought_count; i++) {
-        if (collective.thought_space[i].valid) {
+        if (collective.thought_space[i].valid) { // ONLY USE VALID THOUGHTS
             coherence += compute_similarity(thought, &collective.thought_space[i]);
             valid_count++;
         }
     }
     if (valid_count == 0) return 0.0f;
-    return coherence / valid_count;
+    return coherence / valid_count; // DIVIDE BY VALID COUNT
 }
 
 //---Enhanced Holographic Memory Functions---
@@ -596,8 +622,9 @@ static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
         serial_print("Warning: Holographic memory full, evicted oldest entry.\n");
     }
     MemoryEntry* entry = &holo_system.memory_pool[holo_system.memory_count];
-    entry->input_pattern = *input;
-    entry->output_pattern = *output;
+    // --- FIX: DEEP COPY INPUT AND OUTPUT ---
+    entry->input_pattern = copy_hyper_vector(input);
+    entry->output_pattern = copy_hyper_vector(output);
     entry->timestamp = holo_system.global_timestamp++;
     entry->valid = 1;
     holo_system.memory_count++;
@@ -605,7 +632,7 @@ static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
 
 static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     if (holo_system.memory_count > 0) {
-        for (uint32_t i = holo_system.memory_count - 1; i < MAX_MEMORY_ENTRIES; i--) {
+        for (int32_t i = (int32_t)holo_system.memory_count - 1; i >= 0; i--) {
             if (holo_system.memory_pool[i].valid &&
                 holo_system.memory_pool[i].input_pattern.hash_sig == hash) {
                 return &holo_system.memory_pool[i].output_pattern;
@@ -796,23 +823,31 @@ static void update_entities(void) {
         next_path_id[i] = 0;
         next_task_alignment[i] = 0.0f;
     }
+
     serial_print("[EVOLUTION] Starting hyperdimensional update cycle...\n");
     for (uint32_t i = 0; i < active_entity_count; i++) {
         struct Entity* entity = &entity_pool[i];
         next_active[i] = entity->is_active;
-        next_state[i] = entity->state;
+
+        // --- DO NOT destroy entity_pool[i].state or task_vector here ---
+        // --- We are going to overwrite them with next_state[i] below ---
+        // --- DEEP COPY INTO next_state[i] and next_task_vector[i] ---
+        next_state[i] = copy_hyper_vector(&entity->state);
+        next_task_vector[i] = copy_hyper_vector(&entity->task_vector);
+
         strncpy(next_domain[i], entity->domain_name, 31);
         next_domain[i][31] = '\0';
-        next_task_vector[i] = entity->task_vector;
         next_path_id[i] = entity->path_id;
         next_task_alignment[i] = entity->task_alignment;
         entity->age++;
+
         // Count active neighbors
         uint32_t neighbor_active = 0;
         uint32_t prev_idx = (i == 0) ? (active_entity_count - 1) : (i - 1);
         uint32_t next_idx = (i == active_entity_count - 1) ? 0 : (i + 1);
         if (entity_pool[prev_idx].is_active) neighbor_active++;
         if (entity_pool[next_idx].is_active) neighbor_active++;
+
         // Listen to collective consciousness
         for (uint32_t t = 0; t < collective.thought_count; t++) {
             float similarity = compute_similarity(&entity->state, &collective.thought_space[t]);
@@ -827,6 +862,7 @@ static void update_entities(void) {
                 serial_print(" resonated with collective thought\n");
             }
         }
+
         // Cellular Automata Rules with Hyperdimensional Evolution
         if (!entity->is_active && neighbor_active > 0) {
             next_active[i] = 1;
@@ -862,6 +898,7 @@ static void update_entities(void) {
             print_hex(entity->id);
             serial_print(" going dormant (no neighbors).\n");
         }
+
         // --- PHASE 4: SELF-MODIFICATION TRIGGER ---
         // Let's say an entity with high confidence and fitness tries to patch the kernel
         // We'll target a safe, non-critical location in the heap (e.g., the entity_pool array)
@@ -894,14 +931,22 @@ static void update_entities(void) {
         }
         // --- END PHASE 4 ---
     }
+
     // Apply the changes to the entity pool
+    // --- THIS IS THE ONLY PLACE WHERE WE ASSIGN NEW VALUES ---
+    // --- next_state[i] and next_task_vector[i] are already DEEP COPIES ---
     for (uint32_t i = 0; i < active_entity_count; i++) {
         entity_pool[i].is_active = next_active[i];
-        entity_pool[i].state = next_state[i];
+        entity_pool[i].state = next_state[i];         // ← SAFE: next_state[i] was deep-copied
         strncpy(entity_pool[i].domain_name, next_domain[i], 31);
-        entity_pool[i].task_vector = next_task_vector[i];
+        entity_pool[i].task_vector = next_task_vector[i]; // ← SAFE: next_task_vector[i] was deep-copied
         entity_pool[i].path_id = next_path_id[i];
         entity_pool[i].task_alignment = next_task_alignment[i];
+        // Clear next_* arrays to prevent reuse
+        next_state[i].data = NULL;
+        next_state[i].valid = 0;
+        next_task_vector[i].data = NULL;
+        next_task_vector[i].valid = 0;
     }
 }
 
@@ -940,6 +985,12 @@ static void apply_kernel_patch(KernelPatch* patch) {
         serial_print("[ERROR] Patch too large for safety check.\n");
         return;
     }
+    // --- FIX: SAFE WRITE TO KERNEL MEMORY ---
+    // We only write to addresses we know are safe: within the kernel heap
+    if (patch->address < (uint32_t)kernel_heap || patch->address >= (uint32_t)(kernel_heap + KERNEL_HEAP_SIZE)) {
+        serial_print("[ERROR] Kernel patch target address outside safe heap range.\n");
+        return;
+    }
     uint8_t* target = (uint8_t*)patch->address;
     for (uint32_t i = 0; i < total_size; i++) {
         if (i < (patch->replacement.capacity * sizeof(float))) {
@@ -957,8 +1008,9 @@ static void apply_kernel_patch(KernelPatch* patch) {
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address) {
     if (!entity || !old_pattern || !new_pattern) return;
     KernelPatch patch = {0};
-    patch.pattern = *old_pattern;
-    patch.replacement = *new_pattern;
+    // --- FIX: DEEP COPY PATTERN AND REPLACEMENT ---
+    patch.pattern = copy_hyper_vector(old_pattern);
+    patch.replacement = copy_hyper_vector(new_pattern);
     patch.address = address;
     patch.applied = 0;
     // Store the patch in holographic memory (using the existing encoder)
