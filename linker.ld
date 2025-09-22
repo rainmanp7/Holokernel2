@@ -17,6 +17,11 @@ SECTIONS
         *(.bss)
     }
 
+    /* --- NEW: Reserve 768KB for the kernel heap at 0xA0000 --- */
+    . = 0xA0000;
+    kernel_heap_start = .;
+    . += KERNEL_HEAP_SIZE;
+
     /DISCARD/ : {
         *(.comment)
         *(.note*)
