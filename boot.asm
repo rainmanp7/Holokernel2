@@ -1,7 +1,5 @@
-; boot.asm
-; This file contains the 16-bit bootloader code.
-; It is responsible for loading the kernel into memory
-; and transitioning to protected mode.
+; boot.asm - Fixed bootloader for holographic kernel
+; Loads kernel at correct address and jumps to proper entry point
 [org 0x7c00]
 [bits 16]
 
@@ -12,7 +10,6 @@ start:
     mov es, ax
     mov ss, ax
     mov sp, 0x9000
-
     sti
 
     mov [boot_drive], dl
@@ -23,7 +20,8 @@ start:
     mov si, boot_msg
     call print
 
-    mov ax, HOLOGRAPHIC_KERNEL_OFFSET
+    ; Load kernel at 0x1000 (HOLOGRAPHIC_KERNEL_OFFSET)
+    mov ax, HOLOGRAPHIC_KERNEL_OFFSET >> 4  ; Convert to segment
     mov es, ax
     mov bx, 0x0000
     mov dh, HOLOGRAPHIC_KERNEL_SECTORS
@@ -46,10 +44,12 @@ init_pm:
     mov fs, ax
     mov gs, ax
 
+    ; Set stack at 0x90000 (safe location)
     mov ebp, 0x90000
     mov esp, ebp
 
-    jmp 0x10000
+    ; Jump to kernel entry point (where kernel was loaded)
+    jmp HOLOGRAPHIC_KERNEL_OFFSET
 
 [bits 16]
 print:
@@ -88,7 +88,8 @@ boot_msg db "[BOOT] Loading Holographic Kernel...", 0x0D, 0x0A, 0
 disk_err_msg db "[ERR] Disk read failed!", 0x0D, 0x0A, 0
 boot_drive db 0
 
-HOLOGRAPHIC_KERNEL_OFFSET equ 0x1000
+; Kernel load address (matches linker script)
+HOLOGRAPHIC_KERNEL_OFFSET equ 0x10000
 
 %ifndef HOLOGRAPHIC_KERNEL_SECTORS
 HOLOGRAPHIC_KERNEL_SECTORS equ 20
