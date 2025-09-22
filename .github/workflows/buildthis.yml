@@ -1,0 +1,159 @@
+name: Debug Boot Test with QEMU (Less Verbosity)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-boot-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      QEMU_TIMEOUT: 180
+      IMAGE_NAME: emergeos.img
+      SERIAL_LOG: serial.log
+      QEMU_LOG: qemu_debug.log
+      MONITOR_LOG: qemu_monitor.log
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache APT Dependencies
+        id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/Makefile', '**/dependencies.txt', 'packages.txt') }}-v7
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: Save Installed Packages
+        run: dpkg --get-selections "*" > packages.txt
+
+      - name: Install Dependencies with Debug Tools
+        run: |
+          echo "Checking cached dependencies..."
+          if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "Cache miss. Updating package list and installing dependencies..."
+            sudo apt-get update -y
+            sudo apt-get -f install -y
+            sudo apt-get install -y build-essential nasm qemu-system-i386 gcc-multilib g++-multilib util-linux file strace gdb qemu-utils binutils
+          else
+            echo "✅ APT dependencies found in cache."
+          fi
+
+      - name: Build Kernel Image (Debug Mode)
+        run: |
+          echo "=== BUILDING $IMAGE_NAME ==="
+          if [ ! -f Makefile ]; then
+            echo "❌ Error: Makefile not found."
+            ls -la
+            exit 1
+          fi
+          make clean 2>/dev/null || echo "No clean target, continuing..."
+          make $IMAGE_NAME || { echo "❌ Error: Make failed"; ls -la; exit 1; }
+          if [ ! -f $IMAGE_NAME ]; then
+            echo "❌ Error: $IMAGE_NAME was not created."
+            ls -la
+            exit 1
+          fi
+          echo "✅ $IMAGE_NAME built successfully!"
+          ls -la $IMAGE_NAME
+          file $IMAGE_NAME
+          echo "File size: $(stat -c%s $IMAGE_NAME) bytes"
+          echo "========================="
+
+      - name: Analyze Boot Image
+        run: |
+          echo "=== BOOT IMAGE ANALYSIS ==="
+          file $IMAGE_NAME
+          echo "First 512 bytes (boot sector) in hex:"
+          if command -v hexdump >/dev/null 2>&1; then
+            hexdump -C $IMAGE_NAME | head -8
+          else
+            od -t x1 -A x $IMAGE_NAME | head -8
+          fi
+          echo "Boot signature check (last 2 bytes of first sector should be 55 AA):"
+          if command -v hexdump >/dev/null 2>&1; then
+            dd if=$IMAGE_NAME bs=1 skip=510 count=2 2>/dev/null | hexdump -C
+          else
+            dd if=$IMAGE_NAME bs=1 skip=510 count=2 2>/dev/null | od -t x1
+          fi
+          ls -la $IMAGE_NAME
+          wc -c $IMAGE_NAME
+          echo "========================="
+
+      - name: Run QEMU Boot Test (Less Debug)
+        run: |
+          echo "=== STARTING QEMU SESSION ==="
+          echo "Starting QEMU with image: $IMAGE_NAME"
+          echo "Timeout: $QEMU_TIMEOUT seconds"
+          timeout $QEMU_TIMEOUT qemu-system-i386 \
+            -fda $IMAGE_NAME \
+            -serial file:$SERIAL_LOG \
+            -monitor file:$MONITOR_LOG \
+            -nographic \
+            -machine pc \
+            -cpu pentium \
+            -m 64M \
+            -no-reboot \
+            -boot a \
+            2>&1 | tee qemu_stderr.log || echo "QEMU exited (exit code: $?)"
+          echo "QEMU execution completed."
+          echo "========================="
+
+      - name: Output Analysis
+        run: |
+          echo "=== OUTPUT ANALYSIS ==="
+          echo "QEMU STDERR:"
+          cat qemu_stderr.log || echo "No QEMU stderr output"
+          echo "SERIAL OUTPUT:"
+          cat $SERIAL_LOG || echo "No serial output"
+          echo "========================="
+
+      - name: Boot Success Analysis
+        run: |
+          echo "=== BOOT SUCCESS ANALYSIS ==="
+          if [ ! -f $SERIAL_LOG ] || [ ! -s $SERIAL_LOG ]; then
+            echo "❌ CRITICAL FAILURE: No serial output from QEMU!"
+            exit 1
+          fi
+          if grep -q "Kernel initialized successfully" $SERIAL_LOG; then
+            echo "✅ SUCCESS: Kernel initialized successfully!"
+          else
+            echo "❌ FAILURE: Kernel initialization failed."
+            cat $SERIAL_LOG
+          fi
+          echo "========================="
+
+      - name: Upload Debug Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-boot-artifact
+          path: |
+            $IMAGE_NAME
+            $SERIAL_LOG
+            qemu_stderr.log
+            Makefile
+            boot.asm
+            kernel_entry.asm
+            holographic_kernel.c
+            linker.ld
+          if-no-files-found: warn
+
+      - name: Final Summary
+        if: always()
+        run: |
+          echo "=== FINAL SUMMARY ==="
+          echo "Workflow completed. Check artifacts for logs and image."
+          echo "========================="
