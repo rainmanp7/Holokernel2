@@ -106,6 +106,46 @@ static size_t heap_get_free_space(void) {
     return KERNEL_HEAP_SIZE - heap_offset;
 }
 
+// --- PORT I/O FUNCTIONS (static inline) ---
+static inline void outb(uint16_t port, uint8_t value) {
+    __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
+// --- SERIAL PORT FUNCTIONS ---
+static void serial_write(char c) {
+    // Wait for the transmit buffer to be empty (bit 5 of Line Status Register)
+    while ((inb(0x3F8 + 5) & 0x20) == 0);
+    outb(0x3F8, c);
+}
+
+// --- FIXED: Define serial_print BEFORE kmalloc ---
+static void serial_print(const char* str) {
+    while (*str) {
+        serial_write(*str++);
+    }
+}
+// --- FIXED: Define print_hex BEFORE kmalloc ---
+static void print_hex(uint32_t value) {
+    char hex_chars[] = "0123456789ABCDEF";
+    char hex_str[11]; // 0x + 8 chars + null terminator
+    hex_str[10] = '\0';
+    int i;
+    // Fill the string from the end
+    for (i = 9; i >= 2; i--) {
+        hex_str[i] = hex_chars[value & 0x0F];
+        value >>= 4;
+    }
+    hex_str[0] = '0';
+    hex_str[1] = 'x';
+    print(hex_str);
+}
+// --- END FIXED SECTION ---
+
 static void* kmalloc(size_t size) {
     if (heap_offset + size >= KERNEL_HEAP_SIZE) {
         // --- CRITICAL: LOG THE FAILURE ---
@@ -144,31 +184,25 @@ static void* memset(void* ptr, int value, size_t n) {
     return ptr;
 }
 
-// --- PORT I/O FUNCTIONS (static inline) ---
-static inline void outb(uint16_t port, uint8_t value) {
-    __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
+static void serial_init(void) {
+    // Initialize COM1 serial port (0x3F8)
+    outb(0x3F8 + 1, 0x00); // Disable interrupts
+    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
+    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
+    outb(0x3F8 + 1, 0x00); //                  (hi byte)
+    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
+    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
+// IRQ DISABLED
+    //outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
+    // Send a test character to ensure the port is initialized
+    serial_write('S');
+    serial_write('E');
+    serial_write('R');
+    serial_write(' ');
+    serial_write('O');
+    serial_write('N');
+    serial_write('\n');
 }
-
-static inline uint8_t inb(uint16_t port) {
-    uint8_t ret;
-    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-// --- SERIAL PORT FUNCTIONS ---
-static void serial_write(char c) {
-    // Wait for the transmit buffer to be empty (bit 5 of Line Status Register)
-    while ((inb(0x3F8 + 5) & 0x20) == 0);
-    outb(0x3F8, c);
-}
-
-// --- FIXED: Define serial_print BEFORE kmalloc ---
-static void serial_print(const char* str) {
-    while (*str) {
-        serial_write(*str++);
-    }
-}
-// --- END FIXED SECTION ---
 
 // --- VGA TEXT MODE FUNCTIONS ---
 static void print_char(char c, uint8_t color) {
@@ -204,43 +238,6 @@ static void print(const char* str) {
     while (*str) {
         print_char(*str++, 0x0F); // White text on black background
     }
-}
-
-// --- FIXED: Define print_hex BEFORE kmalloc ---
-static void print_hex(uint32_t value) {
-    char hex_chars[] = "0123456789ABCDEF";
-    char hex_str[11]; // 0x + 8 chars + null terminator
-    hex_str[10] = '\0';
-    int i;
-    // Fill the string from the end
-    for (i = 9; i >= 2; i--) {
-        hex_str[i] = hex_chars[value & 0x0F];
-        value >>= 4;
-    }
-    hex_str[0] = '0';
-    hex_str[1] = 'x';
-    print(hex_str);
-}
-// --- END FIXED SECTION ---
-
-static void serial_init(void) {
-    // Initialize COM1 serial port (0x3F8)
-    outb(0x3F8 + 1, 0x00); // Disable interrupts
-    outb(0x3F8 + 3, 0x80); // Enable DLAB (Divisor Latch Access Bit)
-    outb(0x3F8 + 0, 0x03); // Set divisor to 3 (lo byte) for 38400 baud
-    outb(0x3F8 + 1, 0x00); //                  (hi byte)
-    outb(0x3F8 + 3, 0x03); // 8 bits, no parity, one stop bit
-    outb(0x3F8 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-// IRQ DISABLED
-    //outb(0x3F8 + 4, 0x0B); // IRQs enabled, RTS/DSR set
-    // Send a test character to ensure the port is initialized
-    serial_write('S');
-    serial_write('E');
-    serial_write('R');
-    serial_write(' ');
-    serial_write('O');
-    serial_write('N');
-    serial_write('\n');
 }
 
 // --- Enhanced Math Functions ---
@@ -310,7 +307,6 @@ static uint8_t get_memory_value(uint32_t address);
 // --- PHASE 4: Self-Modifying Kernel Functions ---
 static void apply_kernel_patch(KernelPatch* patch);
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address);
-
 // Global variables (all static, with consistent initialization)
 static struct Entity entity_pool[MAX_ENTITIES];
 static uint32_t active_entity_count = 0;
@@ -564,7 +560,7 @@ static void broadcast_thought(HyperVector* thought) {
         collective.thought_count = MAX_THOUGHTS - 1;
     }
     collective.thought_space[collective.thought_count] = *thought;
-    collective.thought_space[collective.thought_count].valid = 1; // <-- FIXED: MARK AS VALID
+    collective.thought_space[collective.thought_count].valid = 1; // Mark as valid
     collective.thought_count++;
     float coherence = compute_coherence(thought);
     collective.global_coherence = (collective.global_coherence * 9.0f + coherence) / 10.0f;
@@ -578,13 +574,13 @@ static float compute_coherence(HyperVector* thought) {
     float coherence = 0.0f;
     uint32_t valid_count = 0;
     for (uint32_t i = 0; i < collective.thought_count; i++) {
-        if (collective.thought_space[i].valid) { // <-- FIXED: ONLY USE VALID THOUGHTS
+        if (collective.thought_space[i].valid) {
             coherence += compute_similarity(thought, &collective.thought_space[i]);
             valid_count++;
         }
     }
     if (valid_count == 0) return 0.0f;
-    return coherence / valid_count; // <-- FIXED: DIVIDE BY VALID COUNT
+    return coherence / valid_count;
 }
 
 //---Enhanced Holographic Memory Functions---
