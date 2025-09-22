@@ -1,3 +1,5 @@
+[![Debug Boot Test with QEMU (Maximum Verbosity)](https://github.com/rainmanp7/Holokernel2/actions/workflows/buildthis.yml/badge.svg)](https://github.com/rainmanp7/Holokernel2/actions/workflows/buildthis.yml)
+
 # EmergeOS: Enhanced Holographic Kernel with Dynamic Emergent Behavior
 
 ## Overview
