@@ -106,25 +106,6 @@ static size_t heap_get_free_space(void) {
     return KERNEL_HEAP_SIZE - heap_offset;
 }
 
-// --- NEW: DEEP COPY FUNCTION FOR HYPERVECTOR ---
-static HyperVector copy_hyper_vector(const HyperVector* src) {
-    HyperVector dst = {0};
-    if (!src || !src->valid || !src->data) {
-        return dst; // Return invalid
-    }
-    dst.capacity = src->capacity;
-    dst.active_dims = src->active_dims;
-    dst.data = (float*)kmalloc(dst.capacity * sizeof(float));
-    if (!dst.data) {
-        dst.valid = 0;
-        return dst;
-    }
-    memcpy(dst.data, src->data, dst.capacity * sizeof(float));
-    dst.hash_sig = src->hash_sig;
-    dst.valid = 1;
-    return dst;
-}
-
 // --- PORT I/O FUNCTIONS (static inline) ---
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -236,6 +217,7 @@ static void* memset(void* ptr, int value, size_t n) {
     return ptr;
 }
 
+// --- FIXED: Define serial_init AFTER all above functions ---
 static void serial_init(void) {
     // Initialize COM1 serial port (0x3F8)
     outb(0x3F8 + 1, 0x00); // Disable interrupts
@@ -323,18 +305,56 @@ static uint8_t get_memory_value(uint32_t address);
 // --- PHASE 4: Self-Modifying Kernel Functions ---
 static void apply_kernel_patch(KernelPatch* patch);
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address);
-// Global variables (all static, with consistent initialization)
-static struct Entity entity_pool[MAX_ENTITIES];
-static uint32_t active_entity_count = 0;
-static struct HolographicSystem holo_system = {0};
-static struct CollectiveConsciousness collective = {0};
-// Update entity state storage (moved from stack to avoid overflow)
-static uint8_t next_active[MAX_ENTITIES];
-static HyperVector next_state[MAX_ENTITIES];
-static char next_domain[MAX_ENTITIES][32];
-static HyperVector next_task_vector[MAX_ENTITIES];
-static uint32_t next_path_id[MAX_ENTITIES];
-static float next_task_alignment[MAX_ENTITIES];
+
+// --- NEW: DEEP COPY FUNCTION FOR HYPERVECTOR ---
+// --- DEFINED AFTER memcpy() --- ✅ FIXED ORDER
+static HyperVector copy_hyper_vector(const HyperVector* src) {
+    HyperVector dst = {0};
+    if (!src || !src->valid || !src->data) {
+        return dst; // Return invalid
+    }
+    dst.capacity = src->capacity;
+    dst.active_dims = src->active_dims;
+    dst.data = (float*)kmalloc(dst.capacity * sizeof(float));
+    if (!dst.data) {
+        dst.valid = 0;
+        return dst;
+    }
+    memcpy(dst.data, src->data, dst.capacity * sizeof(float));
+    dst.hash_sig = src->hash_sig;
+    dst.valid = 1;
+    return dst;
+}
+
+// --- VGA TEXT MODE FUNCTIONS ---
+static void print_char(char c, uint8_t color) {
+    volatile char* video = (volatile char*)VIDEO_MEMORY;
+    static uint16_t cursor_pos = 0;
+    uint16_t pos_offset;
+    if (c == '\n') {
+        // Move to the beginning of the next line
+        cursor_pos = (cursor_pos / 80 + 1) * 80;
+    } else {
+        pos_offset = cursor_pos * 2;
+        video[pos_offset] = c;
+        video[pos_offset + 1] = color;
+        cursor_pos++;
+    }
+    // Simple scroll: if we've reached the end of the screen buffer
+    if (cursor_pos >= 80 * 25) {
+        // Move lines 1-24 down to lines 0-23
+        for (size_t i = 0; i < 80 * 24; i++) {
+            video[i * 2] = video[(i + 80) * 2];
+            video[i * 2 + 1] = video[(i + 80) * 2 + 1];
+        }
+        // Clear the last line (line 24)
+        for (size_t i = 0; i < 80; i++) {
+            video[(80 * 24 + i) * 2] = ' ';
+            video[(80 * 24 + i) * 2 + 1] = color; // Use current color
+        }
+        cursor_pos = 80 * 24; // Position cursor at the start of the new blank line
+    }
+}
 
 //---Kernel starting point---
 void kmain(void) {
@@ -632,7 +652,8 @@ static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
 
 static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     if (holo_system.memory_count > 0) {
-        for (int32_t i = (int32_t)holo_system.memory_count - 1; i >= 0; i--) {
+        // --- FIXED: Use int, not int32_t ---
+        for (int i = (int)holo_system.memory_count - 1; i >= 0; i--) {
             if (holo_system.memory_pool[i].valid &&
                 holo_system.memory_pool[i].input_pattern.hash_sig == hash) {
                 return &holo_system.memory_pool[i].output_pattern;
@@ -829,8 +850,6 @@ static void update_entities(void) {
         struct Entity* entity = &entity_pool[i];
         next_active[i] = entity->is_active;
 
-        // --- DO NOT destroy entity_pool[i].state or task_vector here ---
-        // --- We are going to overwrite them with next_state[i] below ---
         // --- DEEP COPY INTO next_state[i] and next_task_vector[i] ---
         next_state[i] = copy_hyper_vector(&entity->state);
         next_task_vector[i] = copy_hyper_vector(&entity->task_vector);
@@ -933,13 +952,12 @@ static void update_entities(void) {
     }
 
     // Apply the changes to the entity pool
-    // --- THIS IS THE ONLY PLACE WHERE WE ASSIGN NEW VALUES ---
-    // --- next_state[i] and next_task_vector[i] are already DEEP COPIES ---
+    // --- This is the ONLY place where we assign to entity_pool[i].state and .task_vector ---
     for (uint32_t i = 0; i < active_entity_count; i++) {
         entity_pool[i].is_active = next_active[i];
-        entity_pool[i].state = next_state[i];         // ← SAFE: next_state[i] was deep-copied
+        entity_pool[i].state = next_state[i];         // ← DEEP COPY from next_state[i]
         strncpy(entity_pool[i].domain_name, next_domain[i], 31);
-        entity_pool[i].task_vector = next_task_vector[i]; // ← SAFE: next_task_vector[i] was deep-copied
+        entity_pool[i].task_vector = next_task_vector[i]; // ← DEEP COPY from next_task_vector[i]
         entity_pool[i].path_id = next_path_id[i];
         entity_pool[i].task_alignment = next_task_alignment[i];
         // Clear next_* arrays to prevent reuse
