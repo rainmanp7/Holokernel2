@@ -311,6 +311,14 @@ static uint32_t active_entity_count = 0;
 static struct HolographicSystem holo_system = {0};
 static struct CollectiveConsciousness collective = {0};
 
+// Update entity state storage (moved from stack to avoid overflow)
+static uint8_t next_active[MAX_ENTITIES];
+static HyperVector next_state[MAX_ENTITIES];
+static char next_domain[MAX_ENTITIES][32];
+static HyperVector next_task_vector[MAX_ENTITIES];
+static uint32_t next_path_id[MAX_ENTITIES];
+static float next_task_alignment[MAX_ENTITIES];
+
 //---Kernel starting point---
 void kmain(void) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
@@ -720,12 +728,30 @@ static struct Entity* spawn_entity(void) {
 
 // --- ENHANCED: Update Loop with Hyperdimensional Evolution ---
 static void update_entities(void) {
-    uint8_t next_active[MAX_ENTITIES] = {0};
-    HyperVector next_state[MAX_ENTITIES];
-    char next_domain[MAX_ENTITIES][32];
-    HyperVector next_task_vector[MAX_ENTITIES];
-    uint32_t next_path_id[MAX_ENTITIES];
-    float next_task_alignment[MAX_ENTITIES];
+    // Clear the arrays before use
+    memset(next_active, 0, sizeof(next_active));
+    for (uint32_t i = 0; i < MAX_ENTITIES; i++) {
+        // Clear HyperVector next_state[i]
+        next_state[i].data = NULL;
+        next_state[i].capacity = 0;
+        next_state[i].active_dims = 0;
+        next_state[i].hash_sig = 0;
+        next_state[i].valid = 0;
+        
+        // Clear next_domain[i]
+        next_domain[i][0] = '\0';
+        
+        // Clear HyperVector next_task_vector[i]
+        next_task_vector[i].data = NULL;
+        next_task_vector[i].capacity = 0;
+        next_task_vector[i].active_dims = 0;
+        next_task_vector[i].hash_sig = 0;
+        next_task_vector[i].valid = 0;
+        
+        next_path_id[i] = 0;
+        next_task_alignment[i] = 0.0f;
+    }
+    
     serial_print("[EVOLUTION] Starting hyperdimensional update cycle...\n");
     for (uint32_t i = 0; i < active_entity_count; i++) {
         struct Entity* entity = &entity_pool[i];
