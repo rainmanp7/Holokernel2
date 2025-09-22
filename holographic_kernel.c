@@ -95,18 +95,60 @@ struct HolographicSystem {
     uint32_t global_timestamp;
 };
 // --- KERNEL HEAP MEMORY MANAGEMENT ---
-static uint8_t kernel_heap[0xC0000]; // 128KB heap — KEEP ORIGINAL SIZE FOR STABILITY
+// Heap is now allocated by the linker at a safe address (0xA0000)
+extern uint8_t kernel_heap_start[];
+#define KERNEL_HEAP_SIZE 0xC0000 // 768KB heap
+static uint8_t* kernel_heap = kernel_heap_start;
 static uint32_t heap_offset = 0;
 
 // --- NEW FUNCTION: Get remaining free heap space ---
 static size_t heap_get_free_space(void) {
-    return sizeof(kernel_heap) - heap_offset;
+    return KERNEL_HEAP_SIZE - heap_offset;
+}
+
+static void* kmalloc(size_t size) {
+    if (heap_offset + size >= KERNEL_HEAP_SIZE) {
+        // --- CRITICAL: LOG THE FAILURE ---
+        serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
+        print_hex(size);
+        serial_print(" bytes. Free space: ");
+        print_hex(heap_get_free_space());
+        serial_print(" bytes.\n");
+        return NULL; // Out of memory
+    }
+    void* ptr = &kernel_heap[heap_offset];
+    heap_offset += (size + 7) & ~7; // 8-byte align
+    return ptr;
+}
+
+static void kfree(void* ptr) {
+    // Simple allocator - no actual free for now
+    // In a real kernel, implement a proper allocator
+    (void)ptr; // Suppress unused parameter warning
+}
+
+static void* memcpy(void* dest, const void* src, size_t n) {
+    uint8_t* d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+    for (size_t i = 0; i < n; i++) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+
+static void* memset(void* ptr, int value, size_t n) {
+    uint8_t* p = (uint8_t*)ptr;
+    for (size_t i = 0; i < n; i++) {
+        p[i] = (uint8_t)value;
+    }
+    return ptr;
 }
 
 // --- PORT I/O FUNCTIONS (static inline) ---
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
+
 static inline uint8_t inb(uint16_t port) {
     uint8_t ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
@@ -180,44 +222,6 @@ static void print_hex(uint32_t value) {
     print(hex_str);
 }
 // --- END FIXED SECTION ---
-
-static void* kmalloc(size_t size) {
-    if (heap_offset + size >= sizeof(kernel_heap)) {
-        // --- CRITICAL: LOG THE FAILURE ---
-        serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
-        print_hex(size);
-        serial_print(" bytes. Free space: ");
-        print_hex(heap_get_free_space());
-        serial_print(" bytes.\n");
-        return NULL; // Out of memory
-    }
-    void* ptr = &kernel_heap[heap_offset];
-    heap_offset += (size + 7) & ~7; // 8-byte align
-    return ptr;
-}
-
-static void kfree(void* ptr) {
-    // Simple allocator - no actual free for now
-    // In a real kernel, implement a proper allocator
-    (void)ptr; // Suppress unused parameter warning
-}
-
-static void* memcpy(void* dest, const void* src, size_t n) {
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-    return dest;
-}
-
-static void* memset(void* ptr, int value, size_t n) {
-    uint8_t* p = (uint8_t*)ptr;
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)value;
-    }
-    return ptr;
-}
 
 static void serial_init(void) {
     // Initialize COM1 serial port (0x3F8)
@@ -306,6 +310,7 @@ static uint8_t get_memory_value(uint32_t address);
 // --- PHASE 4: Self-Modifying Kernel Functions ---
 static void apply_kernel_patch(KernelPatch* patch);
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address);
+
 // Global variables (all static, with consistent initialization)
 static struct Entity entity_pool[MAX_ENTITIES];
 static uint32_t active_entity_count = 0;
@@ -559,6 +564,7 @@ static void broadcast_thought(HyperVector* thought) {
         collective.thought_count = MAX_THOUGHTS - 1;
     }
     collective.thought_space[collective.thought_count] = *thought;
+    collective.thought_space[collective.thought_count].valid = 1; // <-- FIXED: MARK AS VALID
     collective.thought_count++;
     float coherence = compute_coherence(thought);
     collective.global_coherence = (collective.global_coherence * 9.0f + coherence) / 10.0f;
@@ -570,10 +576,15 @@ static void broadcast_thought(HyperVector* thought) {
 static float compute_coherence(HyperVector* thought) {
     if (collective.thought_count == 0) return 1.0f;
     float coherence = 0.0f;
+    uint32_t valid_count = 0;
     for (uint32_t i = 0; i < collective.thought_count; i++) {
-        coherence += compute_similarity(thought, &collective.thought_space[i]);
+        if (collective.thought_space[i].valid) { // <-- FIXED: ONLY USE VALID THOUGHTS
+            coherence += compute_similarity(thought, &collective.thought_space[i]);
+            valid_count++;
+        }
     }
-    return coherence / collective.thought_count;
+    if (valid_count == 0) return 0.0f;
+    return coherence / valid_count; // <-- FIXED: DIVIDE BY VALID COUNT
 }
 
 //---Enhanced Holographic Memory Functions---
@@ -634,6 +645,12 @@ static void load_initial_genome_vocabulary(void) {
     serial_print("Loading enhanced genome vocabulary...\n");
     for (size_t i = 0; i < num_vocab; i++) {
         HyperVector pattern = create_hyper_vector(vocab[i], strlen(vocab[i]) + 1);
+        if (!pattern.valid) {
+            serial_print("[FATAL] Failed to create pattern for ");
+            serial_print(vocab[i]);
+            serial_print(". Halting.\n");
+            while(1);
+        }
         encode_holographic_memory(&pattern, &pattern);
         broadcast_thought(&pattern); // Add to collective consciousness
         serial_print("  Loaded & broadcasted: ");
@@ -646,6 +663,10 @@ static void load_initial_genome_vocabulary(void) {
 static void initialize_emergent_entities(void) {
     serial_print("Initializing emergent entity pool with dynamic genomes...\n");
     HyperVector simple_genome_rule = create_hyper_vector("GENOME_ADAPTIVE", strlen("GENOME_ADAPTIVE") + 1);
+    if (!simple_genome_rule.valid) {
+        serial_print("[FATAL] Failed to create genome rule. Halting.\n");
+        while(1);
+    }
     HyperVector* genome_ptr = retrieve_holographic_memory(simple_genome_rule.hash_sig);
     if (!genome_ptr) {
         serial_print("Creating new adaptive genome rule...\n");
@@ -666,9 +687,25 @@ static void initialize_emergent_entities(void) {
         entity->genome = NULL;
         // Create initial state
         entity->state = create_hyper_vector("TRAIT_DORMANT", strlen("TRAIT_DORMANT") + 1);
+        if (!entity->state.valid) {
+            serial_print("[FATAL] Failed to create state for entity. Halting.\n");
+            while(1);
+        }
         // Create initial genome with base genes
         struct Gene* base_gene = create_gene("base_behavior", *genome_ptr);
+        if (!base_gene) {
+            serial_print("[FATAL] Failed to create base gene for entity ");
+            print_hex(entity->id);
+            serial_print(". Halting.\n");
+            while(1);
+        }
         struct Gene* social_gene = create_gene("social_trait", create_hyper_vector("GENOME_SOCIAL", strlen("GENOME_SOCIAL") + 1));
+        if (!social_gene) {
+            serial_print("[FATAL] Failed to create social gene for entity ");
+            print_hex(entity->id);
+            serial_print(". Halting.\n");
+            while(1);
+        }
         add_gene_to_entity(entity, base_gene);
         add_gene_to_entity(entity, social_gene);
         for (uint32_t j = 0; j < MAX_ENTITY_DOMAINS; j++) {
@@ -715,8 +752,16 @@ static struct Entity* spawn_entity(void) {
     new_entity->mutation_rate = 100; // Higher mutation rate for spawned entities
     // Create adaptive state
     new_entity->state = create_hyper_vector("TRAIT_EMERGENT", strlen("TRAIT_EMERGENT") + 1);
+    if (!new_entity->state.valid) {
+        serial_print("[FATAL] Failed to create state for spawned entity. Halting.\n");
+        while(1);
+    }
     // Create initial gene
     struct Gene* emergent_gene = create_gene("emergent", new_entity->state);
+    if (!emergent_gene) {
+        serial_print("[FATAL] Failed to create emergent gene for spawned entity. Halting.\n");
+        while(1);
+    }
     add_gene_to_entity(new_entity, emergent_gene);
     for (uint32_t i = 0; i < MAX_ENTITY_DOMAINS; i++) {
         new_entity->specialization_scores[i] = 0.1f;
@@ -790,6 +835,12 @@ static void update_entities(void) {
         if (!entity->is_active && neighbor_active > 0) {
             next_active[i] = 1;
             next_state[i] = create_hyper_vector("TRAIT_ACTIVE", strlen("TRAIT_ACTIVE") + 1);
+            if (!next_state[i].valid) {
+                serial_print("[WARNING] Failed to create active state for entity ");
+                print_hex(entity->id);
+                serial_print(". Skipping.\n");
+                continue;
+            }
             strncpy(next_domain[i], "reactor", 31);
             next_domain[i][31] = '\0';
             entity->interaction_count++;
@@ -802,6 +853,12 @@ static void update_entities(void) {
         } else if (entity->is_active && neighbor_active == 0) {
             next_active[i] = 0;
             next_state[i] = create_hyper_vector("TRAIT_DORMANT", strlen("TRAIT_DORMANT") + 1);
+            if (!next_state[i].valid) {
+                serial_print("[WARNING] Failed to create dormant state for entity ");
+                print_hex(entity->id);
+                serial_print(". Skipping.\n");
+                continue;
+            }
             strncpy(next_domain[i], "sleeper", 31);
             next_domain[i][31] = '\0';
             entity->interaction_count++;
@@ -817,8 +874,16 @@ static void update_entities(void) {
             // Create a "before" state: the current state of the entity's own `is_active` flag
             // This is a placeholder. In reality, you'd hash a function's assembly signature.
             HyperVector before_state = create_hyper_vector("ENTITY_ACTIVE_FLAG", strlen("ENTITY_ACTIVE_FLAG") + 1);
+            if (!before_state.valid) {
+                serial_print("[WARNING] Failed to create before_state for self-mod. Skipping.\n");
+                continue;
+            }
             // Create a "replacement" state: a pattern that means "become dormant"
             HyperVector after_state = create_hyper_vector("ENTITY_DORMANT_FLAG", strlen("ENTITY_DORMANT_FLAG") + 1);
+            if (!after_state.valid) {
+                serial_print("[WARNING] Failed to create after_state for self-mod. Skipping.\n");
+                continue;
+            }
             // Propose a patch to change the entity's own `is_active` flag
             // The address is a pointer to the `is_active` field of this entity.
             // This is a very simplified example.
