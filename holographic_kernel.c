@@ -94,6 +94,20 @@ struct HolographicSystem {
     uint32_t memory_count;
     uint32_t global_timestamp;
 };
+
+// --- EMERGENT MEMORY SYSTEM ---
+// --- MEMORY BLOCK METADATA ---
+typedef struct mem_block {
+    void* ptr;
+    size_t size;
+    uint32_t allocation_id; // Unique ID for debugging
+    struct Entity* owner;   // Which entity owns this block (optional)
+    uint8_t is_garbage;     // Marked for reclamation
+    struct mem_block* next;
+} mem_block_t;
+
+// --- END EMERGENT MEMORY SYSTEM ---
+
 // --- KERNEL HEAP MEMORY MANAGEMENT ---
 // Heap is now allocated by the linker at a safe address (0xA0000)
 extern uint8_t kernel_heap_start[];
@@ -101,11 +115,15 @@ extern uint8_t kernel_heap_start[];
 static uint8_t* kernel_heap = kernel_heap_start;
 static uint32_t heap_offset = 0;
 
+// --- EMERGENT MEMORY SYSTEM ---
+static mem_block_t* allocation_list = NULL; // Head of the linked list
+static uint32_t allocation_counter = 0;     // For unique IDs
+// --- END EMERGENT MEMORY SYSTEM ---
+
 // --- NEW FUNCTION: Get remaining free heap space ---
 static size_t heap_get_free_space(void) {
     return KERNEL_HEAP_SIZE - heap_offset;
 }
-
 // --- PORT I/O FUNCTIONS (static inline) ---
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -115,28 +133,26 @@ static inline uint8_t inb(uint16_t port) {
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
-
 // --- SERIAL PORT FUNCTIONS ---
 static void serial_write(char c) {
     // Wait for the transmit buffer to be empty (bit 5 of Line Status Register)
     while ((inb(0x3F8 + 5) & 0x20) == 0);
     outb(0x3F8, c);
 }
-
 // --- FIXED: Define serial_print BEFORE kmalloc ---
 static void serial_print(const char* str) {
     while (*str) {
         serial_write(*str++);
     }
 }
-
 // --- FIXED: Define print BEFORE print_hex ---
 static void print(const char* str) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
     static uint16_t cursor_pos = 0;
     uint16_t pos_offset;
     while (*str) {
-        if (*str == '\n') {
+        if (*str == '
+') {
             cursor_pos = (cursor_pos / 80 + 1) * 80;
         } else {
             pos_offset = cursor_pos * 2;
@@ -161,7 +177,6 @@ static void print(const char* str) {
         cursor_pos = 80 * 24;
     }
 }
-
 // --- FIXED: Define print_hex BEFORE kmalloc ---
 static void print_hex(uint32_t value) {
     char hex_chars[] = "0123456789ABCDEF";
@@ -179,6 +194,7 @@ static void print_hex(uint32_t value) {
 }
 // --- END FIXED SECTION ---
 
+// --- EMERGENT MEMORY SYSTEM ---
 static void* kmalloc(size_t size) {
     if (heap_offset + size >= KERNEL_HEAP_SIZE) {
         // --- CRITICAL: LOG THE FAILURE ---
@@ -186,19 +202,166 @@ static void* kmalloc(size_t size) {
         print_hex(size);
         serial_print(" bytes. Free space: ");
         print_hex(heap_get_free_space());
-        serial_print(" bytes.\n");
+        serial_print(" bytes.
+");
         return NULL; // Out of memory
     }
     void* ptr = &kernel_heap[heap_offset];
     heap_offset += (size + 7) & ~7; // 8-byte align
+
+    // --- Create a metadata record for this allocation ---
+    mem_block_t* block = (mem_block_t*)kmalloc(sizeof(mem_block_t)); // Recursive, safe for small struct
+    if (block) {
+        block->ptr = ptr;
+        block->size = size;
+        block->allocation_id = allocation_counter++;
+        block->owner = NULL; // Could be set by entity during gene creation, etc.
+        block->is_garbage = 0;
+        block->next = allocation_list;
+        allocation_list = block;
+        //serial_print("[ALLOC] Block 0x"); print_hex((uint32_t)ptr); serial_print(" (ID: "); print_hex(block->allocation_id); serial_print(") allocated.
+");
+    } else {
+        serial_print("[WARNING] Failed to create allocation metadata. Memory tracking incomplete.
+");
+    }
+    // --- END NEW ---
+
     return ptr;
 }
 
 static void kfree(void* ptr) {
-    // Simple allocator - no actual free for now
-    // In a real kernel, implement a proper allocator
-    (void)ptr; // Suppress unused parameter warning
+    if (!ptr) return;
+
+    // --- Find the block in our allocation list and mark it as garbage ---
+    mem_block_t* current = allocation_list;
+    while (current) {
+        if (current->ptr == ptr) {
+            current->is_garbage = 1;
+            //serial_print("[MARK] Block 0x"); print_hex((uint32_t)ptr); serial_print(" (ID: "); print_hex(current->allocation_id); serial_print(") marked for reclamation.
+");
+            break;
+        }
+        current = current->next;
+    }
+    // --- END NEW ---
+
+    // --- Trigger emergent GC if memory is critically low ---
+    float free_percent = (float)heap_get_free_space() / (float)KERNEL_HEAP_SIZE;
+    if (free_percent < 0.2f) { // 20% free memory threshold
+        perform_emergent_garbage_collection();
+    }
+    // --- END NEW ---
 }
+
+// --- EMERGENT GARBAGE COLLECTION ---
+static void perform_emergent_garbage_collection(void) {
+    serial_print("[MEMORY] CRITICAL: Initiating emergent garbage collection...
+");
+
+    // Broadcast a "SYSTEM_MEMORY_PRESSURE" thought to the collective
+    HyperVector pressure_thought = create_hyper_vector("SYSTEM_MEMORY_PRESSURE", strlen("SYSTEM_MEMORY_PRESSURE") + 1);
+    if (pressure_thought.valid) {
+        broadcast_thought(&pressure_thought);
+        destroy_hyper_vector(&pressure_thought); // Clean up the temporary vector
+    }
+
+    uint32_t entities_deactivated = 0;
+    uint32_t genes_destroyed = 0;
+
+    // Iterate through all active entities and ask them to volunteer for GC
+    for (uint32_t i = 0; i < active_entity_count; i++) {
+        struct Entity* entity = &entity_pool[i];
+        if (!entity->is_active) continue;
+
+        // Calculate sacrifice probability based on entity's state
+        float sacrifice_probability = 0.05f; // Base 5% chance to prevent total system collapse
+
+        // Less confident entities are more likely to sacrifice
+        sacrifice_probability += (1.0f - entity->confidence) * 0.2f;
+        // Older entities are more likely to sacrifice
+        sacrifice_probability += (entity->age / 10000.0f) * 0.3f;
+        // Entities with low fitness are more likely to sacrifice
+        sacrifice_probability -= (entity->fitness_score / 1000.0f) * 0.4f;
+
+        // Generate a pseudo-random number based on entity ID and timestamp
+        uint32_t random_roll = (holo_system.global_timestamp * entity->id) % 1000;
+
+        // If the entity's random roll is below the threshold, it deactivates
+        if (random_roll < (uint32_t)(sacrifice_probability * 1000)) {
+            serial_print("[MEMORY] Entity ");
+            print_hex(entity->id);
+            serial_print(" volunteering for memory reclamation (Fitness: ");
+            print_hex(entity->fitness_score);
+            serial_print(").
+");
+
+            // Deactivate the entity and destroy its resources
+            destroy_genome(entity->genome);
+            destroy_hyper_vector(&entity->state);
+            destroy_hyper_vector(&entity->task_vector);
+
+            entity->genome = NULL;
+            entity->gene_count = 0;
+            entity->is_active = 0; // Deactivate the entity
+
+            entities_deactivated++;
+        } else {
+            // If not deactivating, try to destroy a low-fitness gene
+            struct Gene* current = entity->genome;
+            struct Gene* weakest_gene = NULL;
+            struct Gene* prev = NULL;
+            struct Gene* weakest_prev = NULL;
+
+            // Find the gene with the lowest fitness
+            while (current) {
+                if (!weakest_gene || current->fitness < weakest_gene->fitness) {
+                    weakest_gene = current;
+                    weakest_prev = prev;
+                }
+                prev = current;
+                current = current->next;
+            }
+
+            // If a weak gene is found and the entity has more than one gene, destroy it
+            if (weakest_gene && entity->gene_count > 1) {
+                serial_print("[MEMORY] Entity ");
+                print_hex(entity->id);
+                serial_print(" sacrificing low-fitness gene: ");
+                serial_print(weakest_gene->name);
+                serial_print("
+");
+
+                // Unlink the gene from the genome
+                if (weakest_prev) {
+                    weakest_prev->next = weakest_gene->next;
+                } else {
+                    entity->genome = weakest_gene->next; // It was the head
+                }
+
+                // Destroy the gene
+                destroy_hyper_vector(&weakest_gene->pattern);
+                kfree(weakest_gene); // This will mark the gene struct itself for GC
+
+                entity->gene_count--;
+                genes_destroyed++;
+            }
+        }
+    }
+
+    serial_print("[MEMORY] GC Complete. Deactivated ");
+    print_hex(entities_deactivated);
+    serial_print(" entities, destroyed ");
+    print_hex(genes_destroyed);
+    serial_print(" genes.
+");
+}
+
+// --- HELPER: Get current system memory pressure ---
+static float get_system_memory_pressure(void) {
+    return 1.0f - ((float)heap_get_free_space() / (float)KERNEL_HEAP_SIZE);
+}
+// --- END EMERGENT MEMORY SYSTEM ---
 
 static void* memcpy(void* dest, const void* src, size_t n) {
     uint8_t* d = (uint8_t*)dest;
@@ -208,7 +371,6 @@ static void* memcpy(void* dest, const void* src, size_t n) {
     }
     return dest;
 }
-
 static void* memset(void* ptr, int value, size_t n) {
     uint8_t* p = (uint8_t*)ptr;
     for (size_t i = 0; i < n; i++) {
@@ -216,7 +378,6 @@ static void* memset(void* ptr, int value, size_t n) {
     }
     return ptr;
 }
-
 // --- FIXED: Define serial_init AFTER all above functions ---
 static void serial_init(void) {
     // Initialize COM1 serial port (0x3F8)
@@ -235,9 +396,9 @@ static void serial_init(void) {
     serial_write(' ');
     serial_write('O');
     serial_write('N');
-    serial_write('\n');
+    serial_write('
+');
 }
-
 // --- Enhanced Math Functions ---
 static float sqrtf(float x) {
     if (x <= 0.0f) return 0.0f;
@@ -252,13 +413,11 @@ static float sqrtf(float x) {
     x = x * (1.5f - x_half * x * x);
     return 1.0f / x;
 }
-
 static size_t strlen(const char *str) {
     const char *s;
     for (s = str; *s; ++s);
     return (s - str);
 }
-
 static char *strncpy(char *dest, const char *src, size_t n) {
     size_t i;
     for (i = 0; i < n && src[i] != '\0'; i++)
@@ -267,7 +426,6 @@ static char *strncpy(char *dest, const char *src, size_t n) {
         dest[i] = '\0';
     return dest;
 }
-
 //---Function Prototypes---
 void kmain(void) __attribute__((noreturn));
 static uint32_t hash_data(const void* input, uint32_t size);
@@ -305,13 +463,11 @@ static uint8_t get_memory_value(uint32_t address);
 // --- PHASE 4: Self-Modifying Kernel Functions ---
 static void apply_kernel_patch(KernelPatch* patch);
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address);
-
 // Global variables (all static, with consistent initialization)
 static struct Entity entity_pool[MAX_ENTITIES];
 static uint32_t active_entity_count = 0;
 static struct HolographicSystem holo_system = {0};
 static struct CollectiveConsciousness collective = {0};
-
 // Update entity state storage (moved from stack to avoid overflow)
 static uint8_t next_active[MAX_ENTITIES];
 static HyperVector next_state[MAX_ENTITIES];
@@ -319,7 +475,6 @@ static char next_domain[MAX_ENTITIES][32];
 static HyperVector next_task_vector[MAX_ENTITIES];
 static uint32_t next_path_id[MAX_ENTITIES];
 static float next_task_alignment[MAX_ENTITIES];
-
 // --- NEW: DEEP COPY FUNCTION FOR HYPERVECTOR ---
 // --- DEFINED AFTER memcpy() --- ✅ FIXED ORDER
 static HyperVector copy_hyper_vector(const HyperVector* src) {
@@ -339,13 +494,13 @@ static HyperVector copy_hyper_vector(const HyperVector* src) {
     dst.valid = 1;
     return dst;
 }
-
 // --- VGA TEXT MODE FUNCTIONS ---
 static void print_char(char c, uint8_t color) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
     static uint16_t cursor_pos = 0;
     uint16_t pos_offset;
-    if (c == '\n') {
+    if (c == '
+') {
         // Move to the beginning of the next line
         cursor_pos = (cursor_pos / 80 + 1) * 80;
     } else {
@@ -369,7 +524,6 @@ static void print_char(char c, uint8_t color) {
         cursor_pos = 80 * 24; // Position cursor at the start of the new blank line
     }
 }
-
 //---Kernel starting point---
 void kmain(void) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
@@ -384,11 +538,15 @@ void kmain(void) {
     video[8] = 'R';
     video[9] = 0x0F;
     serial_init();
-    serial_print("DEBUG: Serial initialized, HyperKernel starting!\n");
+    serial_print("DEBUG: Serial initialized, HyperKernel starting!
+");
 __asm__ volatile ("cli"); // Disable interrupts
-    serial_print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...\n");
-    print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...\n");
-    print("Initializing dynamic hyperdimensional memory system...\n");
+    serial_print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...
+");
+    print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...
+");
+    print("Initializing dynamic hyperdimensional memory system...
+");
     initialize_holographic_memory();
     initialize_collective_consciousness();
     load_initial_genome_vocabulary();
@@ -402,15 +560,24 @@ __asm__ volatile ("cli"); // Disable interrupts
         entity_pool[i].mutation_rate = 100; // 10% mutation rate
         serial_print("[TASK] Assigned dynamic path 0xA1 to entity ");
         print_hex(entity_pool[i].id);
-        serial_print("\n");
+        serial_print("
+");
     }
     // --- CLEANUP: Destroy temporary path_vector ---
     destroy_hyper_vector(&path_vector);
-    print("Hyperdimensional Kernel with Dynamic Genomes Initialized!\n");
-    print("System entering emergent entity loop with collective consciousness...\n");
-    serial_print("[BOOT] HyperKernel fully initialized. Evolution engine online.\n");
+    print("Hyperdimensional Kernel with Dynamic Genomes Initialized!
+");
+    print("System entering emergent entity loop with collective consciousness...
+");
+    serial_print("[BOOT] HyperKernel fully initialized. Evolution engine online.
+");
     uint32_t last_update = 0;
     uint32_t update_interval = 500000;
+
+    // --- EMERGENT MEMORY SYSTEM ---
+    // Initialize memory pressure tracking
+    // --- END EMERGENT MEMORY SYSTEM ---
+
     while (1) {
         if (holo_system.global_timestamp - last_update > update_interval) {
             update_entities();
@@ -421,7 +588,6 @@ __asm__ volatile ("cli"); // Disable interrupts
         __asm__ volatile("hlt");
     }
 }
-
 //---Hash function (FNV-1a)---
 static uint32_t hash_data(const void* input, uint32_t size) {
     const uint8_t* data = (const uint8_t*)input;
@@ -432,7 +598,6 @@ static uint32_t hash_data(const void* input, uint32_t size) {
     }
     return hash;
 }
-
 //---PHASE 1: Dynamic Hyperdimensional Manifold Functions---
 static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     HyperVector vec = {0};
@@ -442,7 +607,8 @@ static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     vec.valid = 1;
     // --- ADD THIS CHECK ---
     if (!vec.data) {
-        serial_print("[ERROR] create_hyper_vector: Out of memory!\n");
+        serial_print("[ERROR] create_hyper_vector: Out of memory!
+");
         vec.valid = 0;
         return vec;
     }
@@ -461,14 +627,14 @@ static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     vec.hash_sig = hash_data(vec.data, vec.active_dims * sizeof(float));
     return vec;
 }
-
 static void grow_manifold(HyperVector* vec, uint32_t new_capacity) {
     if (!vec || !vec->valid || new_capacity <= vec->capacity || new_capacity > MAX_DIMENSIONS) {
         return;
     }
     float* new_data = (float*)kmalloc(new_capacity * sizeof(float));
     if (!new_data) {
-        serial_print("[ERROR] Failed to grow manifold - out of memory\n");
+        serial_print("[ERROR] Failed to grow manifold - out of memory
+");
         return;
     }
     // Copy existing data (only if old data exists)
@@ -484,9 +650,9 @@ static void grow_manifold(HyperVector* vec, uint32_t new_capacity) {
     vec->hash_sig = hash_data(vec->data, vec->active_dims * sizeof(float));
     serial_print("[GROW] Manifold expanded to ");
     print_hex(new_capacity);
-    serial_print(" dimensions\n");
+    serial_print(" dimensions
+");
 }
-
 static void destroy_hyper_vector(HyperVector* vec) {
     if (vec && vec->data) {
         kfree(vec->data);
@@ -494,7 +660,6 @@ static void destroy_hyper_vector(HyperVector* vec) {
         vec->valid = 0;
     }
 }
-
 static float compute_similarity(HyperVector* a, HyperVector* b) {
     if (!a || !b || !a->valid || !b->valid || !a->data || !b->data) {
         return 0.0f;
@@ -514,7 +679,6 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
     if (mag_a * mag_b < 1e-10f) return 0.0f;
     return (dot / (mag_a * mag_b));
 }
-
 static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
     if (!dest || !src || !dest->valid || !src->valid) return;
     uint32_t min_dims = (dest->active_dims < src->active_dims) ? dest->active_dims : src->active_dims;
@@ -523,13 +687,13 @@ static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
     }
     dest->hash_sig = hash_data(dest->data, dest->active_dims * sizeof(float));
 }
-
 //---PHASE 2: Self-Modifying Genome Functions---
 static struct Gene* create_gene(const char* name, HyperVector pattern) {
     struct Gene* gene = (struct Gene*)kmalloc(sizeof(struct Gene));
     // --- ADD THIS CHECK ---
     if (!gene) {
-        serial_print("[ERROR] create_gene: Out of memory!\n");
+        serial_print("[ERROR] create_gene: Out of memory!
+");
         return NULL;
     }
     // --- FIX: DEEP COPY THE PATTERN ---
@@ -541,7 +705,6 @@ static struct Gene* create_gene(const char* name, HyperVector pattern) {
     gene->name[15] = '\0';
     return gene;
 }
-
 static void mutate_gene(struct Gene* gene, float rate) {
     if (!gene || !gene->mutable || !gene->pattern.valid) return;
     uint32_t mutations = 0;
@@ -558,10 +721,10 @@ static void mutate_gene(struct Gene* gene, float rate) {
         serial_print(gene->name);
         serial_print(" mutated ");
         print_hex(mutations);
-        serial_print(" dimensions\n");
+        serial_print(" dimensions
+");
     }
 }
-
 static struct Gene* invent_gene(HyperVector pattern) {
     struct Gene* new_gene = (struct Gene*)kmalloc(sizeof(struct Gene));
     if (!new_gene) return NULL;
@@ -574,7 +737,6 @@ static struct Gene* invent_gene(HyperVector pattern) {
     new_gene->name[15] = '\0';
     return new_gene;
 }
-
 static void add_gene_to_entity(struct Entity* entity, struct Gene* gene) {
     if (!entity || !gene || entity->gene_count >= MAX_GENES_PER_ENTITY) return;
     // Add to front of linked list
@@ -585,9 +747,9 @@ static void add_gene_to_entity(struct Entity* entity, struct Gene* gene) {
     serial_print(gene->name);
     serial_print(" to entity ");
     print_hex(entity->id);
-    serial_print("\n");
+    serial_print("
+");
 }
-
 static void destroy_genome(struct Gene* genome) {
     struct Gene* current = genome;
     while (current) {
@@ -597,7 +759,6 @@ static void destroy_genome(struct Gene* genome) {
         current = next;
     }
 }
-
 //---PHASE 3: Collective Consciousness Functions---
 static void initialize_collective_consciousness(void) {
     collective.thought_count = 0;
@@ -605,9 +766,9 @@ static void initialize_collective_consciousness(void) {
     for (uint32_t i = 0; i < MAX_THOUGHTS; i++) {
         collective.thought_space[i].valid = 0;
     }
-    serial_print("[COLLECTIVE] Consciousness initialized\n");
+    serial_print("[COLLECTIVE] Consciousness initialized
+");
 }
-
 static void broadcast_thought(HyperVector* thought) {
     if (!thought || !thought->valid) return;
     if (collective.thought_count >= MAX_THOUGHTS) {
@@ -626,9 +787,9 @@ static void broadcast_thought(HyperVector* thought) {
     collective.global_coherence = (collective.global_coherence * 9.0f + coherence) / 10.0f;
     serial_print("[BROADCAST] Thought added to collective, coherence: ");
     print_hex((uint32_t)(coherence * 1000));
-    serial_print("\n");
+    serial_print("
+");
 }
-
 static float compute_coherence(HyperVector* thought) {
     if (collective.thought_count == 0) return 1.0f;
     float coherence = 0.0f;
@@ -642,7 +803,6 @@ static float compute_coherence(HyperVector* thought) {
     if (valid_count == 0) return 0.0f;
     return coherence / valid_count; // DIVIDE BY VALID COUNT
 }
-
 //---Enhanced Holographic Memory Functions---
 static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
     if (holo_system.memory_count >= MAX_MEMORY_ENTRIES) {
@@ -653,7 +813,8 @@ static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
             holo_system.memory_pool[i] = holo_system.memory_pool[i + 1];
         }
         holo_system.memory_count = MAX_MEMORY_ENTRIES - 1;
-        serial_print("Warning: Holographic memory full, evicted oldest entry.\n");
+        serial_print("Warning: Holographic memory full, evicted oldest entry.
+");
     }
     MemoryEntry* entry = &holo_system.memory_pool[holo_system.memory_count];
     // --- FIX: DEEP COPY INPUT AND OUTPUT ---
@@ -663,7 +824,6 @@ static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
     entry->valid = 1;
     holo_system.memory_count++;
 }
-
 static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     if (holo_system.memory_count > 0) {
         // --- FIXED: Use int, not int32_t ---
@@ -676,9 +836,9 @@ static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     }
     return NULL;
 }
-
 static void initialize_holographic_memory(void) {
-    print("Setting up hyperdimensional memory pool...\n");
+    print("Setting up hyperdimensional memory pool...
+");
     holo_system.memory_count = 0;
     holo_system.global_timestamp = 0;
     for (uint32_t i = 0; i < MAX_MEMORY_ENTRIES; i++) {
@@ -688,9 +848,9 @@ static void initialize_holographic_memory(void) {
     print_hex(INITIAL_DIMENSIONS);
     print(" initial dimensions, expandable to ");
     print_hex(MAX_DIMENSIONS);
-    print(".\n");
+    print(".
+");
 }
-
 static void load_initial_genome_vocabulary(void) {
     const char* vocab[] = {
         "ACTION_PRODUCE", "ACTION_CONSUME", "ACTION_SHARE",
@@ -700,40 +860,47 @@ static void load_initial_genome_vocabulary(void) {
         "GENOME_SIMPLE_RULE_1", "GENOME_ADAPTIVE", "GENOME_SOCIAL"
     };
     const size_t num_vocab = sizeof(vocab) / sizeof(vocab[0]);
-    serial_print("Loading enhanced genome vocabulary...\n");
+    serial_print("Loading enhanced genome vocabulary...
+");
     for (size_t i = 0; i < num_vocab; i++) {
         HyperVector pattern = create_hyper_vector(vocab[i], strlen(vocab[i]) + 1);
         if (!pattern.valid) {
             serial_print("[FATAL] Failed to create pattern for ");
             serial_print(vocab[i]);
-            serial_print(". Halting.\n");
+            serial_print(". Halting.
+");
             while(1);
         }
         encode_holographic_memory(&pattern, &pattern);
         broadcast_thought(&pattern); // Add to collective consciousness
         serial_print("  Loaded & broadcasted: ");
         serial_print(vocab[i]);
-        serial_print("\n");
+        serial_print("
+");
     }
-    serial_print("Enhanced genome vocabulary loaded into collective.\n");
+    serial_print("Enhanced genome vocabulary loaded into collective.
+");
 }
-
 static void initialize_emergent_entities(void) {
-    serial_print("Initializing emergent entity pool with dynamic genomes...\n");
+    serial_print("Initializing emergent entity pool with dynamic genomes...
+");
     HyperVector simple_genome_rule = create_hyper_vector("GENOME_ADAPTIVE", strlen("GENOME_ADAPTIVE") + 1);
     if (!simple_genome_rule.valid) {
-        serial_print("[FATAL] Failed to create genome rule. Halting.\n");
+        serial_print("[FATAL] Failed to create genome rule. Halting.
+");
         while(1);
     }
     HyperVector* genome_ptr = retrieve_holographic_memory(simple_genome_rule.hash_sig);
     if (!genome_ptr) {
-        serial_print("Creating new adaptive genome rule...\n");
+        serial_print("Creating new adaptive genome rule...
+");
         encode_holographic_memory(&simple_genome_rule, &simple_genome_rule);
         genome_ptr = &simple_genome_rule;
     }
     for (uint32_t i = 0; i < (uint32_t)INITIAL_ENTITIES; i++) {
         if (active_entity_count >= MAX_ENTITIES) {
-            serial_print("Error: Cannot initialize more entities, pool full.\n");
+            serial_print("Error: Cannot initialize more entities, pool full.
+");
             break;
         }
         struct Entity* entity = &entity_pool[active_entity_count];
@@ -746,7 +913,8 @@ static void initialize_emergent_entities(void) {
         // Create initial state
         entity->state = create_hyper_vector("TRAIT_DORMANT", strlen("TRAIT_DORMANT") + 1);
         if (!entity->state.valid) {
-            serial_print("[FATAL] Failed to create state for entity. Halting.\n");
+            serial_print("[FATAL] Failed to create state for entity. Halting.
+");
             while(1);
         }
         // Create initial genome with base genes
@@ -754,14 +922,16 @@ static void initialize_emergent_entities(void) {
         if (!base_gene) {
             serial_print("[FATAL] Failed to create base gene for entity ");
             print_hex(entity->id);
-            serial_print(". Halting.\n");
+            serial_print(". Halting.
+");
             while(1);
         }
         struct Gene* social_gene = create_gene("social_trait", create_hyper_vector("GENOME_SOCIAL", strlen("GENOME_SOCIAL") + 1));
         if (!social_gene) {
             serial_print("[FATAL] Failed to create social gene for entity ");
             print_hex(entity->id);
-            serial_print(". Halting.\n");
+            serial_print(". Halting.
+");
             while(1);
         }
         add_gene_to_entity(entity, base_gene);
@@ -784,16 +954,18 @@ static void initialize_emergent_entities(void) {
         print_hex(entity->id);
         serial_print(" with ");
         print_hex(entity->gene_count);
-        serial_print(" genes\n");
+        serial_print(" genes
+");
     }
     serial_print("Initialized ");
     print_hex(active_entity_count);
-    serial_print(" adaptive entities with dynamic genomes.\n");
+    serial_print(" adaptive entities with dynamic genomes.
+");
 }
-
 static struct Entity* spawn_entity(void) {
     if (active_entity_count >= MAX_ENTITIES) {
-        serial_print("Cannot spawn: Entity pool full.\n");
+        serial_print("Cannot spawn: Entity pool full.
+");
         return NULL;
     }
     struct Entity* new_entity = &entity_pool[active_entity_count];
@@ -811,13 +983,15 @@ static struct Entity* spawn_entity(void) {
     // Create adaptive state
     new_entity->state = create_hyper_vector("TRAIT_EMERGENT", strlen("TRAIT_EMERGENT") + 1);
     if (!new_entity->state.valid) {
-        serial_print("[FATAL] Failed to create state for spawned entity. Halting.\n");
+        serial_print("[FATAL] Failed to create state for spawned entity. Halting.
+");
         while(1);
     }
     // Create initial gene
     struct Gene* emergent_gene = create_gene("emergent", new_entity->state);
     if (!emergent_gene) {
-        serial_print("[FATAL] Failed to create emergent gene for spawned entity. Halting.\n");
+        serial_print("[FATAL] Failed to create emergent gene for spawned entity. Halting.
+");
         while(1);
     }
     add_gene_to_entity(new_entity, emergent_gene);
@@ -832,10 +1006,10 @@ static struct Entity* spawn_entity(void) {
     active_entity_count++;
     serial_print("[SPAWN] SUCCESS: New adaptive entity ID ");
     print_hex(new_entity->id);
-    serial_print(" with dynamic genome.\n");
+    serial_print(" with dynamic genome.
+");
     return new_entity;
 }
-
 // --- ENHANCED: Update Loop with Hyperdimensional Evolution ---
 static void update_entities(void) {
     // Clear the arrays before use
@@ -858,21 +1032,63 @@ static void update_entities(void) {
         next_path_id[i] = 0;
         next_task_alignment[i] = 0.0f;
     }
-
-    serial_print("[EVOLUTION] Starting hyperdimensional update cycle...\n");
+    serial_print("[EVOLUTION] Starting hyperdimensional update cycle...
+");
     for (uint32_t i = 0; i < active_entity_count; i++) {
         struct Entity* entity = &entity_pool[i];
         next_active[i] = entity->is_active;
-
         // --- DEEP COPY INTO next_state[i] and next_task_vector[i] ---
         next_state[i] = copy_hyper_vector(&entity->state);
         next_task_vector[i] = copy_hyper_vector(&entity->task_vector);
-
         strncpy(next_domain[i], entity->domain_name, 31);
         next_domain[i][31] = '\0';
         next_path_id[i] = entity->path_id;
         next_task_alignment[i] = entity->task_alignment;
         entity->age++;
+
+        // --- EMERGENT MEMORY SYSTEM ---
+        // Every 500 ticks, an entity checks if it should sacrifice a gene
+        if (entity->age % 500 == 0 && entity->gene_count > 1) {
+            float pressure = get_system_memory_pressure();
+            if (pressure > 0.7f) { // 70% memory used
+                // Find the weakest gene
+                struct Gene* current = entity->genome;
+                struct Gene* weakest_gene = NULL;
+                struct Gene* prev = NULL;
+                struct Gene* weakest_prev = NULL;
+
+                while (current) {
+                    if (!weakest_gene || current->fitness < weakest_gene->fitness) {
+                        weakest_gene = current;
+                        weakest_prev = prev;
+                    }
+                    prev = current;
+                    current = current->next;
+                }
+
+                if (weakest_gene) {
+                    serial_print("[MEMORY] Entity ");
+                    print_hex(entity->id);
+                    serial_print(" proactively sacrificing gene: ");
+                    serial_print(weakest_gene->name);
+                    serial_print(" due to high memory pressure (");
+                    print_hex((uint32_t)(pressure * 1000));
+                    serial_print(").
+");
+
+                    // Unlink and destroy the gene
+                    if (weakest_prev) {
+                        weakest_prev->next = weakest_gene->next;
+                    } else {
+                        entity->genome = weakest_gene->next;
+                    }
+                    destroy_hyper_vector(&weakest_gene->pattern);
+                    kfree(weakest_gene);
+                    entity->gene_count--;
+                }
+            }
+        }
+        // --- END EMERGENT MEMORY SYSTEM ---
 
         // Count active neighbors
         uint32_t neighbor_active = 0;
@@ -880,7 +1096,6 @@ static void update_entities(void) {
         uint32_t next_idx = (i == active_entity_count - 1) ? 0 : (i + 1);
         if (entity_pool[prev_idx].is_active) neighbor_active++;
         if (entity_pool[next_idx].is_active) neighbor_active++;
-
         // Listen to collective consciousness
         for (uint32_t t = 0; t < collective.thought_count; t++) {
             float similarity = compute_similarity(&entity->state, &collective.thought_space[t]);
@@ -892,10 +1107,10 @@ static void update_entities(void) {
                 merge_hyper_vectors(&entity->state, &collective.thought_space[t]);
                 serial_print("[RESONATE] Entity ");
                 print_hex(entity->id);
-                serial_print(" resonated with collective thought\n");
+                serial_print(" resonated with collective thought
+");
             }
         }
-
         // Cellular Automata Rules with Hyperdimensional Evolution
         if (!entity->is_active && neighbor_active > 0) {
             next_active[i] = 1;
@@ -903,7 +1118,8 @@ static void update_entities(void) {
             if (!next_state[i].valid) {
                 serial_print("[WARNING] Failed to create active state for entity ");
                 print_hex(entity->id);
-                serial_print(". Skipping.\n");
+                serial_print(". Skipping.
+");
                 continue;
             }
             strncpy(next_domain[i], "reactor", 31);
@@ -914,14 +1130,16 @@ static void update_entities(void) {
             broadcast_thought(&next_state[i]);
             serial_print("[ACTIVATE] Entity ");
             print_hex(entity->id);
-            serial_print(" activated by neighbor.\n");
+            serial_print(" activated by neighbor.
+");
         } else if (entity->is_active && neighbor_active == 0) {
             next_active[i] = 0;
             next_state[i] = create_hyper_vector("TRAIT_DORMANT", strlen("TRAIT_DORMANT") + 1);
             if (!next_state[i].valid) {
                 serial_print("[WARNING] Failed to create dormant state for entity ");
                 print_hex(entity->id);
-                serial_print(". Skipping.\n");
+                serial_print(". Skipping.
+");
                 continue;
             }
             strncpy(next_domain[i], "sleeper", 31);
@@ -929,9 +1147,9 @@ static void update_entities(void) {
             entity->interaction_count++;
             serial_print("[SLEEP] Entity ");
             print_hex(entity->id);
-            serial_print(" going dormant (no neighbors).\n");
+            serial_print(" going dormant (no neighbors).
+");
         }
-
         // --- PHASE 4: SELF-MODIFICATION TRIGGER ---
         // Let's say an entity with high confidence and fitness tries to patch the kernel
         // We'll target a safe, non-critical location in the heap (e.g., the entity_pool array)
@@ -941,13 +1159,15 @@ static void update_entities(void) {
             // This is a placeholder. In reality, you'd hash a function's assembly signature.
             HyperVector before_state = create_hyper_vector("ENTITY_ACTIVE_FLAG", strlen("ENTITY_ACTIVE_FLAG") + 1);
             if (!before_state.valid) {
-                serial_print("[WARNING] Failed to create before_state for self-mod. Skipping.\n");
+                serial_print("[WARNING] Failed to create before_state for self-mod. Skipping.
+");
                 continue;
             }
             // Create a "replacement" state: a pattern that means "become dormant"
             HyperVector after_state = create_hyper_vector("ENTITY_DORMANT_FLAG", strlen("ENTITY_DORMANT_FLAG") + 1);
             if (!after_state.valid) {
-                serial_print("[WARNING] Failed to create after_state for self-mod. Skipping.\n");
+                serial_print("[WARNING] Failed to create after_state for self-mod. Skipping.
+");
                 continue;
             }
             // Propose a patch to change the entity's own `is_active` flag
@@ -960,11 +1180,11 @@ static void update_entities(void) {
             entity->fitness_score = 0;
             serial_print("[SELF-MOD] Entity ");
             print_hex(entity->id);
-            serial_print(" proposed a kernel patch to change its own state.\n");
+            serial_print(" proposed a kernel patch to change its own state.
+");
         }
         // --- END PHASE 4 ---
     }
-
     // Apply the changes to the entity pool
     // --- This is the ONLY place where we assign to entity_pool[i].state and .task_vector ---
     for (uint32_t i = 0; i < active_entity_count; i++) {
@@ -981,30 +1201,27 @@ static void update_entities(void) {
         next_task_vector[i].valid = 0;
     }
 }
-
 static void render_entities_to_vga(void) {
     // This is a placeholder for rendering the state of entities to the VGA screen.
     // In a real system, this would visualize the collective consciousness or entity states.
     // For now, just print a debug message.
-    serial_print("[RENDER] Updating VGA display with entity states.\n");
+    serial_print("[RENDER] Updating VGA display with entity states.
+");
 }
-
 static void probe_hardware(void) {
     // Placeholder for hardware probing. In a real system, this would gather CPU, memory, device info.
     // The current implementation in the blueprint is not used in the update loop.
-    serial_print("[PROBE] Hardware probe initiated.\n");
+    serial_print("[PROBE] Hardware probe initiated.
+");
 }
-
 static void set_memory_value(uint32_t address, uint8_t value) {
     volatile uint8_t *ptr = (volatile uint8_t *)address;
     *ptr = value;
 }
-
 static uint8_t get_memory_value(uint32_t address) {
     volatile uint8_t *ptr = (volatile uint8_t *)address;
     return *ptr;
 }
-
 // --- PHASE 4: Self-Modifying Kernel Functions ---
 static void apply_kernel_patch(KernelPatch* patch) {
     if (patch->applied) return;
@@ -1014,13 +1231,15 @@ static void apply_kernel_patch(KernelPatch* patch) {
     // In a real system, you'd need to disable write protection on the kernel text section.
     uint32_t total_size = patch->replacement.active_dims * sizeof(float);
     if (total_size > 1024) {
-        serial_print("[ERROR] Patch too large for safety check.\n");
+        serial_print("[ERROR] Patch too large for safety check.
+");
         return;
     }
     // --- FIX: SAFE WRITE TO KERNEL MEMORY ---
     // We only write to addresses we know are safe: within the kernel heap
     if (patch->address < (uint32_t)kernel_heap || patch->address >= (uint32_t)(kernel_heap + KERNEL_HEAP_SIZE)) {
-        serial_print("[ERROR] Kernel patch target address outside safe heap range.\n");
+        serial_print("[ERROR] Kernel patch target address outside safe heap range.
+");
         return;
     }
     uint8_t* target = (uint8_t*)patch->address;
@@ -1034,9 +1253,9 @@ static void apply_kernel_patch(KernelPatch* patch) {
     patch->applied = 1;
     serial_print("KERNEL PATCH APPLIED AT 0x");
     print_hex(patch->address);
-    serial_print("\n");
+    serial_print("
+");
 }
-
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address) {
     if (!entity || !old_pattern || !new_pattern) return;
     KernelPatch patch = {0};
@@ -1053,5 +1272,6 @@ static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern
     print_hex(entity->id);
     serial_print(" proposed a patch at 0x");
     print_hex(address);
-    serial_print("\n");
+    serial_print("
+");
 }
