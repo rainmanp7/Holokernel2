@@ -57,7 +57,7 @@ jobs:
       - name: System Information
         run: |
           echo "=== SYSTEM INFORMATION ==="
-          uname -al
+          uname -a
           lscpu | head -10
           free -h
           df -h
