@@ -106,7 +106,7 @@ static uint32_t heap_offset = 0;
 static mem_block_t* allocation_list = NULL;
 static uint32_t allocation_counter = 0;
 
-// --- FUNCTION DECLARATIONS ---
+// --- FUNCTION PROTOTYPES ---
 static void* kmalloc(size_t size);
 static void kfree(void* ptr);
 static void perform_emergent_garbage_collection(void);
@@ -181,7 +181,69 @@ static void print_hex(uint32_t value) {
     print(hex_str);
 }
 
-// --- EMERGENT MEMORY ALLOCATOR ---
+// --- UTILITIES ---
+static void* memcpy(void* dest, const void* src, size_t n) {
+    uint8_t* d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+    for (size_t i = 0; i < n; i++) d[i] = s[i];
+    return dest;
+}
+static void* memset(void* ptr, int value, size_t n) {
+    uint8_t* p = (uint8_t*)ptr;
+    for (size_t i = 0; i < n; i++) p[i] = (uint8_t)value;
+    return ptr;
+}
+static float sqrtf(float x) {
+    if (x <= 0.0f) return 0.0f;
+    float x_half = 0.5f * x;
+    union { float f; uint32_t i; } u;
+    u.f = x;
+    u.i = 0x5f3759df - (u.i >> 1);
+    x = u.f * (1.5f - x_half * x * x);
+    return 1.0f / x;
+}
+static size_t strlen(const char *str) {
+    const char *s; for (s = str; *s; ++s); return (s - str);
+}
+static char *strncpy(char *dest, const char *src, size_t n) {
+    size_t i;
+    for (i = 0; i < n && src[i] != '\0'; i++) dest[i] = src[i];
+    for (; i < n; i++) dest[i] = '\0';
+    return dest;
+}
+
+// --- GLOBAL VARIABLES ---
+static struct Entity entity_pool[MAX_ENTITIES];
+static uint32_t active_entity_count = 0;
+static struct HolographicSystem holo_system = {0};
+static struct CollectiveConsciousness collective = {0};
+
+// --- HYPERVECTOR ---
+static uint32_t hash_data(const void* input, uint32_t size);
+static HyperVector create_hyper_vector(const void* input, uint32_t size);
+static void destroy_hyper_vector(HyperVector* vec);
+static float compute_similarity(HyperVector* a, HyperVector* b);
+static void merge_hyper_vectors(HyperVector* dest, HyperVector* src);
+
+// --- GENOME ---
+static struct Gene* create_gene(const char* name, HyperVector pattern);
+static void destroy_genome(struct Gene* genome);
+
+// --- COLLECTIVE CONSCIOUSNESS ---
+static void initialize_collective_consciousness(void);
+static void broadcast_thought(HyperVector* thought);
+static float compute_coherence(HyperVector* thought);
+
+// --- HOLOGRAPHIC MEMORY ---
+static void initialize_holographic_memory(void);
+static void encode_holographic_memory(HyperVector* input, HyperVector* output);
+static HyperVector* retrieve_holographic_memory(uint32_t hash);
+
+// --- ENTITY MANAGEMENT ---
+static void initialize_emergent_entities(void);
+static void update_entities(void);
+
+// --- EMERGENT MEMORY ALLOCATOR (NOW PLACED AFTER ALL DEPENDENCIES) ---
 static void* kmalloc(size_t size) {
     if (heap_offset + size >= KERNEL_HEAP_SIZE) {
         serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
@@ -303,38 +365,7 @@ static void perform_emergent_garbage_collection(void) {
     serial_print(" genes.\n");
 }
 
-// --- UTILITIES ---
-static void* memcpy(void* dest, const void* src, size_t n) {
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
-    for (size_t i = 0; i < n; i++) d[i] = s[i];
-    return dest;
-}
-static void* memset(void* ptr, int value, size_t n) {
-    uint8_t* p = (uint8_t*)ptr;
-    for (size_t i = 0; i < n; i++) p[i] = (uint8_t)value;
-    return ptr;
-}
-static float sqrtf(float x) {
-    if (x <= 0.0f) return 0.0f;
-    float x_half = 0.5f * x;
-    union { float f; uint32_t i; } u;
-    u.f = x;
-    u.i = 0x5f3759df - (u.i >> 1);
-    x = u.f * (1.5f - x_half * x * x);
-    return 1.0f / x;
-}
-static size_t strlen(const char *str) {
-    const char *s; for (s = str; *s; ++s); return (s - str);
-}
-static char *strncpy(char *dest, const char *src, size_t n) {
-    size_t i;
-    for (i = 0; i < n && src[i] != '\0'; i++) dest[i] = src[i];
-    for (; i < n; i++) dest[i] = '\0';
-    return dest;
-}
-
-// --- HYPERVECTOR ---
+// --- HYPERVECTOR IMPLEMENTATION ---
 static uint32_t hash_data(const void* input, uint32_t size) {
     const uint8_t* data = (const uint8_t*)input;
     uint32_t hash = 2166136261U;
@@ -406,7 +437,16 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
     return dot / (mag_a * mag_b);
 }
 
-// --- GENOME ---
+static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
+    if (!dest || !src || !dest->valid || !src->valid) return;
+    uint32_t min_dims = (dest->active_dims < src->active_dims) ? dest->active_dims : src->active_dims;
+    for (uint32_t i = 0; i < min_dims; i++) {
+        dest->data[i] = (dest->data[i] + src->data[i]) * 0.5f;
+    }
+    dest->hash_sig = hash_data(dest->data, dest->active_dims * sizeof(float));
+}
+
+// --- GENOME IMPLEMENTATION ---
 static struct Gene* create_gene(const char* name, HyperVector pattern) {
     struct Gene* gene = (struct Gene*)kmalloc(sizeof(struct Gene));
     if (!gene) {
@@ -432,8 +472,7 @@ static void destroy_genome(struct Gene* genome) {
     }
 }
 
-// --- COLLECTIVE CONSCIOUSNESS ---
-static struct CollectiveConsciousness collective = {0};
+// --- COLLECTIVE CONSCIOUSNESS IMPLEMENTATION ---
 static void initialize_collective_consciousness(void) {
     collective.thought_count = 0;
     collective.global_coherence = 0.0f;
@@ -475,8 +514,7 @@ static float compute_coherence(HyperVector* thought) {
     return valid_count ? coherence / valid_count : 0.0f;
 }
 
-// --- HOLOGRAPHIC MEMORY ---
-static struct HolographicSystem holo_system = {0};
+// --- HOLOGRAPHIC MEMORY IMPLEMENTATION ---
 static void initialize_holographic_memory(void) {
     holo_system.memory_count = 0;
     holo_system.global_timestamp = 0;
@@ -515,10 +553,7 @@ static HyperVector* retrieve_holographic_memory(uint32_t hash) {
     return NULL;
 }
 
-// --- ENTITY MANAGEMENT ---
-static struct Entity entity_pool[MAX_ENTITIES];
-static uint32_t active_entity_count = 0;
-
+// --- ENTITY MANAGEMENT IMPLEMENTATION ---
 static void initialize_emergent_entities(void) {
     serial_print("🧬 Initializing emergent entity pool...\n");
     HyperVector base_pattern = create_hyper_vector("GENOME_ADAPTIVE", 16);
