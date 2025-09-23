@@ -306,6 +306,20 @@ static uint8_t get_memory_value(uint32_t address);
 static void apply_kernel_patch(KernelPatch* patch);
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address);
 
+// Global variables (all static, with consistent initialization)
+static struct Entity entity_pool[MAX_ENTITIES];
+static uint32_t active_entity_count = 0;
+static struct HolographicSystem holo_system = {0};
+static struct CollectiveConsciousness collective = {0};
+
+// Update entity state storage (moved from stack to avoid overflow)
+static uint8_t next_active[MAX_ENTITIES];
+static HyperVector next_state[MAX_ENTITIES];
+static char next_domain[MAX_ENTITIES][32];
+static HyperVector next_task_vector[MAX_ENTITIES];
+static uint32_t next_path_id[MAX_ENTITIES];
+static float next_task_alignment[MAX_ENTITIES];
+
 // --- NEW: DEEP COPY FUNCTION FOR HYPERVECTOR ---
 // --- DEFINED AFTER memcpy() --- ✅ FIXED ORDER
 static HyperVector copy_hyper_vector(const HyperVector* src) {
