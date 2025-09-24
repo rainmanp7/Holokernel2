@@ -39,7 +39,6 @@ jobs:
         run: dpkg --get-selections "*" > packages.txt
 
       - name: Install Dependencies with Debug Tools
-        shell: bash
         run: |
           echo "Checking cached dependencies..."
           if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
@@ -56,7 +55,6 @@ jobs:
           fi
 
       - name: System Information
-        shell: bash
         run: |
           echo "=== SYSTEM INFORMATION ==="
           uname -a
@@ -66,7 +64,6 @@ jobs:
           echo "=========================="
 
       - name: Verify Tools Installation (Extended)
-        shell: bash
         run: |
           echo "=== TOOL VERIFICATION ==="
           which gcc && gcc --version | head -1
@@ -81,7 +78,6 @@ jobs:
           echo "========================="
 
       - name: Build Kernel Image (Debug Mode)
-        shell: bash
         run: |
           echo "=== BUILDING $IMAGE_NAME ==="
           if [ ! -f Makefile ]; then
@@ -120,7 +116,6 @@ jobs:
           echo "========================="
 
       - name: Analyze Boot Image
-        shell: bash
         run: |
           echo "=== BOOT IMAGE ANALYSIS ==="
           echo "Image file type:"
@@ -146,7 +141,6 @@ jobs:
           echo "========================="
 
       - name: QEMU Capabilities Test
-        shell: bash
         run: |
           echo "=== QEMU CAPABILITIES ==="
           echo "Available QEMU machines:"
@@ -160,7 +154,6 @@ jobs:
           echo "========================="
 
       - name: Run QEMU Boot Test (Maximum Debug)
-        shell: bash
         run: |
           echo "=== STARTING QEMU DEBUG SESSION ==="
           echo "Starting QEMU with image: $IMAGE_NAME"
@@ -180,7 +173,7 @@ jobs:
           echo "  -fda $IMAGE_NAME \\"
           echo "  -serial file:$SERIAL_LOG \\"
           echo "  -monitor file:$MONITOR_LOG \\"
-          echo "  -d int,cpu,guest_errors,unimp \\"
+          echo "  -d int,cpu,guest_errors,unimp,trace:* \\"
           echo "  -D $QEMU_LOG \\"
           echo "  -nographic \\"
           echo "  -machine pc \\"
@@ -209,7 +202,6 @@ jobs:
           echo "========================="
 
       - name: Comprehensive Output Analysis
-        shell: bash
         run: |
           echo "=== COMPREHENSIVE DEBUG ANALYSIS ==="
           
@@ -261,7 +253,6 @@ jobs:
           echo "========================="
 
       - name: Boot Success Analysis
-        shell: bash
         run: |
           echo "=== BOOT SUCCESS ANALYSIS ==="
           
@@ -324,33 +315,24 @@ jobs:
         with:
           name: debug-boot-artifacts
           path: |
-            ${{ env.IMAGE_NAME }}
-            ${{ env.SERIAL_LOG }}
-            ${{ env.QEMU_LOG }}
-            ${{ env.MONITOR_LOG }}
+            $IMAGE_NAME
+            $SERIAL_LOG
+            $QEMU_LOG
+            $MONITOR_LOG
             qemu_stderr.log
             monitor_commands.txt
             packages.txt
+            *.bin
+            *.elf
             Makefile
             boot.asm
             kernel_entry.asm
             holographic_kernel.c
             linker.ld
-            *.bin
-            *.elf
-            **/*.log
-            **/*.txt
-            **/*.asm
-            **/*.bin
-            **/*.elf
-            **/*.c
-            **/*.ld
-            **/*.img
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       - name: Final Summary
         if: always()
-        shell: bash
         run: |
           echo "=== FINAL DEBUG SUMMARY ==="
           echo "Workflow completed. Key files created:"
