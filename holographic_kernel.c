@@ -133,7 +133,6 @@ static void* kmalloc(size_t size);
 static void kfree(void* ptr);
 static void perform_emergent_garbage_collection(void);
 static float get_system_memory_pressure(void);
-static int can_afford_vector_copy(uint32_t vector_count);
 
 // HyperVector
 static uint32_t hash_data(const void* input, uint32_t size);
@@ -141,7 +140,6 @@ static HyperVector create_hyper_vector(const void* input, uint32_t size);
 static HyperVector copy_hyper_vector(const HyperVector* src);
 static void destroy_hyper_vector(HyperVector* vec);
 static float compute_similarity(HyperVector* a, HyperVector* b);
-static void merge_hyper_vectors(HyperVector* dest, HyperVector* src);
 
 // Genome
 static struct Gene* create_gene(const char* name, HyperVector pattern);
@@ -154,8 +152,6 @@ static float compute_coherence(HyperVector* thought);
 
 // Holographic Memory
 static void initialize_holographic_memory(void);
-static void encode_holographic_memory(HyperVector* input, HyperVector* output);
-static HyperVector* retrieve_holographic_memory(uint32_t hash);
 
 // Entity Management
 static void initialize_emergent_entities(void);
@@ -179,6 +175,7 @@ static void* memset(void* ptr, int value, size_t n);
 static float sqrtf(float x);
 static size_t strlen(const char *str);
 static char *strncpy(char *dest, const char *src, size_t n);
+static void uint_to_str(uint32_t num, char* buf, uint8_t width);
 
 // ============================================================================
 // --- PORT I/O ---
@@ -299,15 +296,25 @@ static char *strncpy(char *dest, const char *src, size_t n) {
     return dest;
 }
 
+// --- MINIMAL INTEGER TO STRING (for bare-metal) ---
+static void uint_to_str(uint32_t num, char* buf, uint8_t width) {
+    for (int i = 0; i < width; i++) buf[i] = ' ';
+    buf[width] = '\0';
+    if (num == 0) {
+        buf[width - 1] = '0';
+        return;
+    }
+    int pos = width - 1;
+    while (num > 0 && pos >= 0) {
+        buf[pos] = '0' + (num % 10);
+        num /= 10;
+        pos--;
+    }
+}
+
 // ============================================================================
 // --- MEMORY ALLOCATION (EMERGENT ECONOMY) ---
 // ============================================================================
-static int can_afford_vector_copy(uint32_t vector_count) {
-    size_t needed = vector_count * MAX_DIMENSIONS * sizeof(float);
-    size_t free_space = KERNEL_HEAP_SIZE - heap_offset;
-    return (needed < free_space * 0.8f);
-}
-
 static void* kmalloc(size_t size) {
     if (heap_offset + size >= KERNEL_HEAP_SIZE) {
         serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
@@ -492,15 +499,6 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
     return dot / (mag_a * mag_b);
 }
 
-static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
-    if (!dest || !src || !dest->valid || !src->valid) return;
-    uint32_t min_dims = (dest->active_dims < src->active_dims) ? dest->active_dims : src->active_dims;
-    for (uint32_t i = 0; i < min_dims; i++) {
-        dest->data[i] = (dest->data[i] + src->data[i]) * 0.5f;
-    }
-    dest->hash_sig = hash_data(dest->data, dest->active_dims * sizeof(float));
-}
-
 // ============================================================================
 // --- GENOME SYSTEM ---
 // ============================================================================
@@ -583,35 +581,6 @@ static void initialize_holographic_memory(void) {
         holo_system.memory_pool[i].valid = 0;
     }
     print("🧠 Holographic memory system online.\n");
-}
-
-static void encode_holographic_memory(HyperVector* input, HyperVector* output) {
-    if (holo_system.memory_count >= MAX_MEMORY_ENTRIES) {
-        destroy_hyper_vector(&holo_system.memory_pool[0].input_pattern);
-        destroy_hyper_vector(&holo_system.memory_pool[0].output_pattern);
-        for (uint32_t i = 0; i < MAX_MEMORY_ENTRIES - 1; i++) {
-            holo_system.memory_pool[i] = holo_system.memory_pool[i + 1];
-        }
-        holo_system.memory_count = MAX_MEMORY_ENTRIES - 1;
-    }
-    MemoryEntry* entry = &holo_system.memory_pool[holo_system.memory_count];
-    entry->input_pattern = copy_hyper_vector(input);
-    entry->output_pattern = copy_hyper_vector(output);
-    entry->timestamp = holo_system.global_timestamp++;
-    entry->valid = 1;
-    holo_system.memory_count++;
-}
-
-static HyperVector* retrieve_holographic_memory(uint32_t hash) {
-    if (holo_system.memory_count > 0) {
-        for (int i = (int)holo_system.memory_count - 1; i >= 0; i--) {
-            if (holo_system.memory_pool[i].valid &&
-                holo_system.memory_pool[i].input_pattern.hash_sig == hash) {
-                return &holo_system.memory_pool[i].output_pattern;
-            }
-        }
-    }
-    return NULL;
 }
 
 // ============================================================================
@@ -734,16 +703,16 @@ void kmain(void) {
             // Memory pressure
             float pressure = get_system_memory_pressure();
             uint32_t press_pct = (uint32_t)(pressure * 100);
-            char mem_str[32];
-            snprintf(mem_str, sizeof(mem_str), "Mem: %u%%", press_pct);
+            char mem_str[32] = "Mem:      %";
+            uint_to_str(press_pct, mem_str + 5, 2);
             for (int i = 0; mem_str[i]; i++) {
                 vga[(21 * 80 + i) * 2] = mem_str[i];
                 vga[(21 * 80 + i) * 2 + 1] = 0x0F;
             }
 
             // Active entities
-            char ent_str[32];
-            snprintf(ent_str, sizeof(ent_str), "Ent: %u", active_entity_count);
+            char ent_str[32] = "Ent:     ";
+            uint_to_str(active_entity_count, ent_str + 5, 2);
             for (int i = 0; ent_str[i]; i++) {
                 vga[(22 * 80 + i) * 2] = ent_str[i];
                 vga[(22 * 80 + i) * 2 + 1] = 0x0A;
@@ -751,16 +720,16 @@ void kmain(void) {
 
             // Coherence
             uint32_t coh_pct = (uint32_t)(collective.global_coherence * 100);
-            char coh_str[32];
-            snprintf(coh_str, sizeof(coh_str), "Coh: %u%%", coh_pct);
+            char coh_str[32] = "Coh:      %";
+            uint_to_str(coh_pct, coh_str + 5, 2);
             for (int i = 0; coh_str[i]; i++) {
                 vga[(23 * 80 + i) * 2] = coh_str[i];
                 vga[(23 * 80 + i) * 2 + 1] = 0x0B;
             }
 
             // Cycle
-            char cyc_str[20];
-            snprintf(cyc_str, sizeof(cyc_str), "Cycle: %u/4", report_cycle);
+            char cyc_str[20] = "Cycle:   /4";
+            cyc_str[7] = '0' + report_cycle;
             for (int i = 0; cyc_str[i]; i++) {
                 vga[(24 * 80 + i) * 2] = cyc_str[i];
                 vga[(24 * 80 + i) * 2 + 1] = 0x0C;
