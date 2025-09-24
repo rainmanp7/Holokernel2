@@ -691,6 +691,13 @@ static struct Entity* spawn_entity(void) {
     return new_entity;
 }
 
+// Added Bridge that was suggested.
+static int can_afford_vector_copy(uint32_t vector_count) {
+    size_t needed = vector_count * MAX_DIMENSIONS * sizeof(float);
+    size_t free_space = KERNEL_HEAP_SIZE - heap_offset;
+    return (needed < free_space * 0.8f);
+}
+
 // --- 🔥 CRITICAL: UPDATE_ENTITIES WITH VOLUNTARY SKIP (MERGED FIX) ---
 static void update_entities(void) {
     memset(next_active, 0, sizeof(next_active));
