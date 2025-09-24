@@ -730,6 +730,7 @@ void kmain(void) {
             // Cycle
             char cyc_str[20] = "Cycle:   /4";
             cyc_str[7] = '0' + report_cycle;
+            cyc_str[8] = '\0'; // <--- CRITICAL FIX: Ensure string is null-terminated after setting the cycle number
             for (int i = 0; cyc_str[i]; i++) {
                 vga[(24 * 80 + i) * 2] = cyc_str[i];
                 vga[(24 * 80 + i) * 2 + 1] = 0x0C;
