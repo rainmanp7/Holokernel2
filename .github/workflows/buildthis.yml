@@ -29,7 +29,8 @@
           echo ""
 
           # Run QEMU with maximum debugging
-          timeout $QEMU_TIMEOUT qemu-system-i386 \
+          # Capture the exit code of the timeout command
+          if timeout $QEMU_TIMEOUT qemu-system-i386 \
             -fda $IMAGE_NAME \
             -serial file:$SERIAL_LOG \
             -monitor file:$MONITOR_LOG \
@@ -41,17 +42,23 @@
             -m 64M \
             -no-reboot \
             -boot a \
-            2>&1 | tee qemu_stderr.log || {
-              echo "❌ QEMU exited with an error (exit code: $?). Check qemu_stderr.log"
-              exit 1 # Exit the step to prevent artifact upload if QEMU failed
-            }
+            2>&1 | tee qemu_stderr.log; then
+            QEMU_EXIT_CODE=$?
+          else
+            QEMU_EXIT_CODE=$?
+          fi
+
+          if [ $QEMU_EXIT_CODE -ne 0 ]; then
+            echo "❌ QEMU exited with an error (exit code: $QEMU_EXIT_CODE). Check qemu_stderr.log"
+            exit 1 # Exit the step to prevent artifact upload if QEMU failed
+          fi
 
           echo "QEMU execution completed."
           echo "========================="
         working-directory: ${{ github.workspace }} # Ensure files are created in the workspace
 
       - name: Upload Debug Artifacts
-        if: always() && (success() || failure()) # Ensure this step runs even if a previous step fails
+        if: always()
         run: |
           # Change directory to workspace to ensure correct file paths
           cd ${{ github.workspace }}
@@ -61,7 +68,7 @@
             echo "Uploading debug artifacts..."
             # List files before uploading to confirm they exist
             ls -la
-            
+
             # Proceed with artifact upload
             echo "IMAGE_NAME: $IMAGE_NAME"
             echo "SERIAL_LOG: $SERIAL_LOG"
@@ -70,15 +77,13 @@
             echo "qemu_stderr.log: qemu_stderr.log"
             echo "monitor_commands.txt: monitor_commands.txt"
             echo "packages.txt: packages.txt"
-            echo "*.bin: *.bin"
-            echo "*.elf: *.elf"
-            echo "Makefile: Makefile"
-            echo "boot.asm: boot.asm"
-            echo "kernel_entry.asm: kernel_entry.asm"
-            echo "holographic_kernel.c: holographic_kernel.c"
-            echo "linker.ld: linker.ld"
+            echo "Finding *.bin files:"
+            find . -name "*.bin" -print
+            echo "Finding *.elf files:"
+            find . -name "*.elf" -print
           else
             echo "❌ No log files found. Skipping artifact upload."
+            exit 0
           fi
         uses: actions/upload-artifact@v4
         with:
