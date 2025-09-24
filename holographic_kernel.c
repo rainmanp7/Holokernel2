@@ -10,7 +10,6 @@ typedef unsigned long   uintptr_t;
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
-
 // --- CONFIGURATION ---
 #define INITIAL_DIMENSIONS 512
 #define MAX_DIMENSIONS 2048
@@ -22,7 +21,6 @@ typedef unsigned long   uintptr_t;
 #define MAX_GENES_PER_ENTITY 16
 #define VIDEO_MEMORY 0xb8000
 #define KERNEL_HEAP_SIZE 0xC0000 // 768KB heap at 0xA0000
-
 // --- Structure definitions ---
 typedef struct {
     float* data;
@@ -31,7 +29,6 @@ typedef struct {
     uint32_t hash_sig;
     uint8_t valid;
 } HyperVector;
-
 typedef struct Gene {
     HyperVector pattern;
     struct Gene* next;
@@ -39,7 +36,6 @@ typedef struct Gene {
     uint8_t mutable;
     char name[16];
 } Gene;
-
 struct Entity {
     uint32_t id;
     HyperVector state;
@@ -61,34 +57,29 @@ struct Entity {
     uint8_t is_mutant;
     uint32_t mutation_rate;
 };
-
 struct CollectiveConsciousness {
     HyperVector thought_space[MAX_THOUGHTS];
     uint32_t thought_count;
     float global_coherence;
 };
-
 typedef struct {
     HyperVector input_pattern;
     HyperVector output_pattern;
     uint32_t timestamp;
     uint8_t valid;
 } MemoryEntry;
-
 typedef struct {
     HyperVector pattern;
     HyperVector replacement;
     uint32_t address;
     uint8_t applied;
 } KernelPatch;
-
 struct HolographicSystem {
     MemoryEntry memory_pool[MAX_MEMORY_ENTRIES];
     uint32_t memory_count;
     uint32_t global_timestamp;
 };
-
-// --- EMERGENT MEMORY SYSTEM (from .c.txt) ---
+// --- EMERGENT MEMORY SYSTEM ---
 typedef struct mem_block {
     void* ptr;
     size_t size;
@@ -97,14 +88,12 @@ typedef struct mem_block {
     uint8_t is_garbage;
     struct mem_block* next;
 } mem_block_t;
-
 // --- KERNEL HEAP ---
 extern uint8_t kernel_heap_start[];
 static uint8_t* kernel_heap = kernel_heap_start;
 static uint32_t heap_offset = 0;
 static mem_block_t* allocation_list = NULL;
 static uint32_t allocation_counter = 0;
-
 // --- FUNCTION PROTOTYPES ---
 static void* kmalloc(size_t size);
 static void kfree(void* ptr);
@@ -117,7 +106,6 @@ static void print(const char* str);
 static void print_hex(uint32_t value);
 static void serial_init(void);
 static void print_char(char c, uint8_t color);
-
 // --- PORT I/O ---
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -127,7 +115,6 @@ static inline uint8_t inb(uint16_t port) {
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
-
 // --- SERIAL ---
 static void serial_write(char c) {
     while ((inb(0x3F8 + 5) & 0x20) == 0);
@@ -136,7 +123,6 @@ static void serial_write(char c) {
 static void serial_print(const char* str) {
     while (*str) serial_write(*str++);
 }
-
 // --- VGA TEXT MODE ---
 static void print_char(char c, uint8_t color) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
@@ -180,7 +166,6 @@ static void print_hex(uint32_t value) {
     hex_str[0] = '0'; hex_str[1] = 'x';
     print(hex_str);
 }
-
 // --- UTILITIES ---
 static void* memcpy(void* dest, const void* src, size_t n) {
     uint8_t* d = (uint8_t*)dest;
@@ -211,13 +196,11 @@ static char *strncpy(char *dest, const char *src, size_t n) {
     for (; i < n; i++) dest[i] = '\0';
     return dest;
 }
-
 // --- GLOBAL VARIABLES ---
 static struct Entity entity_pool[MAX_ENTITIES];
 static uint32_t active_entity_count = 0;
 static struct HolographicSystem holo_system = {0};
 static struct CollectiveConsciousness collective = {0};
-
 // --- Update state buffers (static to avoid stack overflow) ---
 static uint8_t next_active[MAX_ENTITIES];
 static HyperVector next_state[MAX_ENTITIES];
@@ -225,48 +208,40 @@ static char next_domain[MAX_ENTITIES][32];
 static HyperVector next_task_vector[MAX_ENTITIES];
 static uint32_t next_path_id[MAX_ENTITIES];
 static float next_task_alignment[MAX_ENTITIES];
-
 // --- HYPERVECTOR ---
 static uint32_t hash_data(const void* input, uint32_t size);
 static HyperVector create_hyper_vector(const void* input, uint32_t size);
 static void destroy_hyper_vector(HyperVector* vec);
 static float compute_similarity(HyperVector* a, HyperVector* b);
 static void merge_hyper_vectors(HyperVector* dest, HyperVector* src);
-
 // --- GENOME ---
 static struct Gene* create_gene(const char* name, HyperVector pattern);
 static void mutate_gene(struct Gene* gene, float rate);
 static struct Gene* invent_gene(HyperVector pattern);
 static void add_gene_to_entity(struct Entity* entity, struct Gene* gene);
 static void destroy_genome(struct Gene* genome);
-
 // --- COLLECTIVE CONSCIOUSNESS ---
 static void initialize_collective_consciousness(void);
 static void broadcast_thought(HyperVector* thought);
 static float compute_coherence(HyperVector* thought);
-
 // --- HOLOGRAPHIC MEMORY ---
 static void initialize_holographic_memory(void);
 static void encode_holographic_memory(HyperVector* input, HyperVector* output);
 static HyperVector* retrieve_holographic_memory(uint32_t hash);
 static void load_initial_genome_vocabulary(void);
-
 // --- ENTITY MANAGEMENT ---
 static void initialize_emergent_entities(void);
 static struct Entity* spawn_entity(void);
 static void update_entities(void);
 static void render_entities_to_vga(void);
-
 // --- HARDWARE & MEMORY ---
 static void probe_hardware(void);
 static void set_memory_value(uint32_t address, uint8_t value);
 static uint8_t get_memory_value(uint32_t address);
-
 // --- SELF-MODIFICATION ---
 static void apply_kernel_patch(KernelPatch* patch);
 static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern, HyperVector* new_pattern, uint32_t address);
-
-// --- MEMORY ALLOCATOR (from .c.txt, enhanced) ---
+// --- MEMORY ALLOCATOR (from .MEM.c.txt, enhanced) ---
 static void* kmalloc(size_t size) {
     if (heap_offset + size >= KERNEL_HEAP_SIZE) {
         serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
@@ -313,7 +288,6 @@ static int can_afford_vector_copy(uint32_t vector_count) {
     size_t free_space = KERNEL_HEAP_SIZE - heap_offset;
     return (needed < free_space * 0.8f);
 }
-
 // --- EMERGENT GARBAGE COLLECTION ---
 static void perform_emergent_garbage_collection(void) {
     serial_print("[MEMORY] 🌱 Initiating Emergent Garbage Collection...\n");
@@ -379,7 +353,6 @@ static void perform_emergent_garbage_collection(void) {
     print_hex(genes_destroyed);
     serial_print(" genes.\n");
 }
-
 // --- HYPERVECTOR IMPLEMENTATION ---
 static uint32_t hash_data(const void* input, uint32_t size) {
     const uint8_t* data = (const uint8_t*)input;
@@ -455,7 +428,6 @@ static void merge_hyper_vectors(HyperVector* dest, HyperVector* src) {
     }
     dest->hash_sig = hash_data(dest->data, dest->active_dims * sizeof(float));
 }
-
 // --- GENOME IMPLEMENTATION ---
 static struct Gene* create_gene(const char* name, HyperVector pattern) {
     struct Gene* gene = (struct Gene*)kmalloc(sizeof(struct Gene));
@@ -521,7 +493,6 @@ static void destroy_genome(struct Gene* genome) {
         current = next;
     }
 }
-
 // --- COLLECTIVE CONSCIOUSNESS ---
 static void initialize_collective_consciousness(void) {
     collective.thought_count = 0;
@@ -561,7 +532,6 @@ static float compute_coherence(HyperVector* thought) {
     }
     return valid_count ? coherence / valid_count : 0.0f;
 }
-
 // --- HOLOGRAPHIC MEMORY ---
 static void initialize_holographic_memory(void) {
     holo_system.memory_count = 0;
@@ -624,7 +594,6 @@ static void load_initial_genome_vocabulary(void) {
     }
     serial_print("Enhanced genome vocabulary loaded into collective.\n");
 }
-
 // --- ENTITY MANAGEMENT ---
 static void initialize_emergent_entities(void) {
     serial_print("🧬 Initializing emergent entity pool...\n");
@@ -690,14 +659,6 @@ static struct Entity* spawn_entity(void) {
     serial_print(" with dynamic genome.\n");
     return new_entity;
 }
-
-// Added Bridge that was suggested.
-static int can_afford_vector_copy(uint32_t vector_count) {
-    size_t needed = vector_count * MAX_DIMENSIONS * sizeof(float);
-    size_t free_space = KERNEL_HEAP_SIZE - heap_offset;
-    return (needed < free_space * 0.8f);
-}
-
 // --- 🔥 CRITICAL: UPDATE_ENTITIES WITH VOLUNTARY SKIP (MERGED FIX) ---
 static void update_entities(void) {
     memset(next_active, 0, sizeof(next_active));
@@ -708,14 +669,12 @@ static void update_entities(void) {
         next_path_id[i] = 0;
         next_task_alignment[i] = 0.0f;
     }
-
     float pressure = get_system_memory_pressure();
     if (pressure > 0.8f) {
         serial_print("[MEMORY] 🌫️ High pressure (");
         print_hex((uint32_t)(pressure * 1000));
         serial_print("). Entities may skip update to preserve coherence.\n");
     }
-
     for (uint32_t i = 0; i < active_entity_count; i++) {
         struct Entity* entity = &entity_pool[i];
         next_active[i] = entity->is_active;
@@ -723,7 +682,6 @@ static void update_entities(void) {
         next_domain[i][31] = '\0';
         next_path_id[i] = entity->path_id;
         next_task_alignment[i] = entity->task_alignment;
-
         // VOLUNTARY SKIP: Low-fitness entities opt out under pressure
         if (pressure > 0.8f && entity->fitness_score < 30) {
             serial_print("[MEMORY] Entity ");
@@ -737,7 +695,6 @@ static void update_entities(void) {
             entity->age++;
             continue;
         }
-
         // SAFE DEEP COPY ONLY IF AFFORDABLE
         if (!can_afford_vector_copy(2)) {
             serial_print("[MEMORY] 🚫 Cannot afford deep-copy. Entity ");
@@ -748,7 +705,6 @@ static void update_entities(void) {
             entity->age++;
             continue;
         }
-
         // NORMAL DEEP-COPY PATH
         next_state[i] = copy_hyper_vector(&entity->state);
         next_task_vector[i] = copy_hyper_vector(&entity->task_vector);
@@ -760,7 +716,6 @@ static void update_entities(void) {
             next_task_vector[i] = entity->task_vector;
         }
         entity->age++;
-
         // --- INTEGRATE ADVANCED EVOLUTION FROM .miss.txt ---
         // Listen to collective
         for (uint32_t t = 0; t < collective.thought_count; t++) {
@@ -775,14 +730,12 @@ static void update_entities(void) {
                 serial_print(" resonated with collective thought\n");
             }
         }
-
         // Neighbor-based activation/sleep
         uint32_t neighbor_active = 0;
         uint32_t prev_idx = (i == 0) ? (active_entity_count - 1) : (i - 1);
         uint32_t next_idx = (i == active_entity_count - 1) ? 0 : (i + 1);
         if (entity_pool[prev_idx].is_active) neighbor_active++;
         if (entity_pool[next_idx].is_active) neighbor_active++;
-
         if (!entity->is_active && neighbor_active > 0) {
             next_active[i] = 1;
             next_state[i] = create_hyper_vector("TRAIT_ACTIVE", strlen("TRAIT_ACTIVE") + 1);
@@ -816,7 +769,6 @@ static void update_entities(void) {
             print_hex(entity->id);
             serial_print(" going dormant (no neighbors).\n");
         }
-
         // Self-modification trigger
         if (entity->confidence > 0.8f && entity->fitness_score > 50 && entity->mutation_rate > 100) {
             HyperVector before_state = create_hyper_vector("ENTITY_ACTIVE_FLAG", strlen("ENTITY_ACTIVE_FLAG") + 1);
@@ -832,7 +784,6 @@ static void update_entities(void) {
             }
         }
     }
-
     // Apply state (only destroy deep copies)
     for (uint32_t i = 0; i < active_entity_count; i++) {
         entity_pool[i].is_active = next_active[i];
@@ -851,8 +802,7 @@ static void update_entities(void) {
         entity_pool[i].task_alignment = next_task_alignment[i];
     }
 }
-
-// --- VGA RENDER (from .miss.txt) ---
+// --- VGA RENDER ---
 static void render_entities_to_vga(void) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
     for (int i = 0; i < 80*25*2; i += 2) {
@@ -896,7 +846,6 @@ static void render_entities_to_vga(void) {
         video[(24*80 + 70 + i)*2 + 1] = 0x0E;
     }
 }
-
 // --- SELF-MODIFICATION ---
 static void apply_kernel_patch(KernelPatch* patch) {
     if (patch->applied) return;
@@ -937,7 +886,6 @@ static void propose_kernel_patch(struct Entity* entity, HyperVector* old_pattern
     print_hex(address);
     serial_print("\n");
 }
-
 // --- KERNEL ENTRY ---
 void kmain(void) __attribute__((noreturn));
 void kmain(void) {
@@ -973,4 +921,3 @@ static void serial_init(void) {
     outb(0x3F8 + 2, 0xC7);
     serial_write('S'); serial_write('E'); serial_write('R'); serial_write('\n');
 }
-// Line 969
