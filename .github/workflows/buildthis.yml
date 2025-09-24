@@ -67,7 +67,7 @@
           if [ -f "$SERIAL_LOG" ] || [ -f "$QEMU_LOG" ]; then
             echo "Uploading debug artifacts..."
             # List files before uploading to confirm they exist
-            ls -la
+            ls -l
 
             # Proceed with artifact upload
             echo "IMAGE_NAME: $IMAGE_NAME"
