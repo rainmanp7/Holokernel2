@@ -109,7 +109,6 @@ static mem_block_t metadata_pool[MAX_ALLOCATIONS];
 static mem_block_t* free_metadata_list = NULL;
 static mem_block_t* allocation_list = NULL; // Head of active allocations
 static uint32_t allocation_counter = 0;
-// --- NEW: Track garbage collected metadata blocks ---
 static uint32_t gc_metadata_count = 0;
 // ============================================================================
 // --- GLOBAL VARIABLES ---
@@ -631,25 +630,33 @@ void kmain(void) {
     print_str_vga("✅ System online. Entities managing memory.", 0x0F, 9, 0);
     // Boot complete indicator
     print_str_vga("[BOOT] 🚀 HyperKernel fully initialized. Emergent economy active.", 0x0F, 10, 0);
-    
     // Test stack integrity
     uint32_t test_val = 0xDEADBEEF;
     __asm__ volatile (
-        "pushl %0\n\t"
-        "popl %%eax\n\t"
-        "cmp %0, %%eax\n\t"
-        "jne stack_error\n\t"
-        "jmp stack_ok\n\t"
-        "stack_error:\n\t"
-        "mov $0x0C, %%al\n\t"
-        "mov $0x00, %%dl\n\t"
-        "out dx, al\n\t"
-        "stack_ok:\n\t"
+        "pushl %0
+\t"
+        "popl %%eax
+\t"
+        "cmp %0, %%eax
+\t"
+        "jne stack_error
+\t"
+        "jmp stack_ok
+\t"
+        "stack_error:
+\t"
+        "mov $0x0C, %%al
+\t"
+        "mov $0x00, %%dl
+\t"
+        "out dx, al
+\t"
+        "stack_ok:
+\t"
         :
         : "r"(test_val)
         : "eax"
     );
-    
     uint32_t last_update = 0;
     uint32_t last_report = 0;
     const uint32_t REPORT_INTERVAL = 3000000; // ~3 seconds
