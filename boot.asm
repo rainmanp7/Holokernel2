@@ -4,25 +4,32 @@
 ; and transitioning to protected mode.
 [org 0x7c00]
 [bits 16]
+
 start:
     cli
     xor ax, ax
     mov ds, ax
     mov es, ax
-    mov ss, ax          ; ss = 0x0000
-    mov sp, 0x9000      ; stack at 0x0000:0x9000 = physical 0x9000
+    mov ss, ax
+    mov sp, 0x9000
+
     sti
+
     mov [boot_drive], dl
+
     mov ax, 0x0003
     int 0x10
+
     mov si, boot_msg
     call print
+
     mov ax, HOLOGRAPHIC_KERNEL_OFFSET
     mov es, ax
     mov bx, 0x0000
     mov dh, HOLOGRAPHIC_KERNEL_SECTORS
     mov dl, [boot_drive]
     call disk_load
+
     ; Load GDT and switch to protected mode
     lgdt [gdt_descriptor]
     mov eax, cr0
@@ -38,8 +45,10 @@ init_pm:
     mov es, ax
     mov fs, ax
     mov gs, ax
+
     mov ebp, 0x90000
     mov esp, ebp
+
     jmp 0x10000
 
 [bits 16]
@@ -58,16 +67,15 @@ print:
 
 disk_load:
     pusha
-    mov ah, 0x02        ; BIOS read sector function
-    ; --- FIXED: Preserve sector count before overwriting dh ---
-    mov cl, dh          ; Save sector count in cl
-    mov al, cl          ; al = number of sectors
-    ; --- END FIX ---
-    mov ch, 0x00        ; Cylinder 0
-    mov dh, 0x00        ; Head 0
-    mov cl, 0x02        ; Starting sector = 2
-    int 0x13            ; Call BIOS disk services
-    jc disk_error       ; Jump if error (carry set)
+    mov ah, 0x02       ; BIOS read sector function
+    mov al, dh         ; Number of sectors to read
+    mov ch, 0x00       ; Cylinder number
+    mov dh, 0x00       ; Head number
+    mov cl, 0x02       ; Starting sector
+
+    int 0x13           ; Call BIOS disk services
+    jc disk_error      ; Jump if carry flag set (error)
+
     popa
     ret
 
@@ -81,13 +89,15 @@ disk_err_msg db "[ERR] Disk read failed!", 0x0D, 0x0A, 0
 boot_drive db 0
 
 HOLOGRAPHIC_KERNEL_OFFSET equ 0x1000
+
 %ifndef HOLOGRAPHIC_KERNEL_SECTORS
-HOLOGRAPHIC_KERNEL_SECTORS equ 6   ; ← Critical: reduced from 20 to 6
+HOLOGRAPHIC_KERNEL_SECTORS equ 20
 %endif
 
 gdt_start:
     dd 0x0
     dd 0x0
+
 gdt_code:
     dw 0xffff
     dw 0x0
@@ -95,6 +105,7 @@ gdt_code:
     db 10011010b
     db 11001111b
     db 0x0
+
 gdt_data:
     dw 0xffff
     dw 0x0
