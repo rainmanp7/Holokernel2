@@ -9,11 +9,8 @@ start:
     xor ax, ax
     mov ds, ax
     mov es, ax
-    ; --- FIXED STACK SETUP ---
-    mov ax, 0x9000      ; segment for physical address 0x90000
-    mov ss, ax
-    mov sp, 0x0000      ; stack at 0x9000:0x0000 = 0x90000
-    ; -------------------------
+    mov ss, ax          ; ss = 0x0000
+    mov sp, 0x9000      ; stack at 0x0000:0x9000 = physical 0x9000
     sti
     mov [boot_drive], dl
     mov ax, 0x0003
@@ -61,16 +58,16 @@ print:
 
 disk_load:
     pusha
-    mov ah, 0x02       ; BIOS read sector function
-    ; --- FIXED SECTOR COUNT ---
-    mov bl, dh         ; Preserve sector count
-    mov al, bl         ; al = number of sectors
-    ; -------------------------
-    mov ch, 0x00       ; Cylinder 0
-    mov dh, 0x00       ; Head 0
-    mov cl, 0x02       ; Start at sector 2
-    int 0x13           ; Call BIOS disk services
-    jc disk_error      ; Jump if error
+    mov ah, 0x02        ; BIOS read sector function
+    ; --- FIXED: Preserve sector count before overwriting dh ---
+    mov cl, dh          ; Save sector count in cl
+    mov al, cl          ; al = number of sectors
+    ; --- END FIX ---
+    mov ch, 0x00        ; Cylinder 0
+    mov dh, 0x00        ; Head 0
+    mov cl, 0x02        ; Starting sector = 2
+    int 0x13            ; Call BIOS disk services
+    jc disk_error       ; Jump if error (carry set)
     popa
     ret
 
@@ -85,7 +82,7 @@ boot_drive db 0
 
 HOLOGRAPHIC_KERNEL_OFFSET equ 0x1000
 %ifndef HOLOGRAPHIC_KERNEL_SECTORS
-HOLOGRAPHIC_KERNEL_SECTORS equ 20
+HOLOGRAPHIC_KERNEL_SECTORS equ 6   ; ← Critical: reduced from 20 to 6
 %endif
 
 gdt_start:
