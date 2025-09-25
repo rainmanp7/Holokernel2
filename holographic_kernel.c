@@ -1,8 +1,7 @@
 // ============================================================================
-// HOLOGRAPHIC KERNEL WITH EMERGENT MEMORY ECONOMY
+// HOLOGRAPHIC KERNEL WITH EMERGENT MEMORY ECONOMY — VGA-ONLY BOOT DIAGNOSTICS
 // ============================================================================
-// Entities trade, sacrifice, and evolve to manage memory as a living system.
-// No traditional malloc/free — memory is governed by artificial life.
+// All boot output goes to VGA. No serial dependency.
 // ============================================================================
 // ============================================================================
 // --- TYPE DEFINITIONS ---
@@ -149,10 +148,9 @@ static void update_entities(void);
 // I/O
 static void serial_init(void);
 static void serial_write(char c);
-static void serial_print(const char* str);
-static void print_char(char c, uint8_t color);
-static void print(const char* str);
-static void print_hex(uint32_t value);
+static void print_char_vga(char c, uint8_t color, int row, int col); // New: Direct row/col write
+static void print_str_vga(const char* str, uint8_t color, int row, int start_col);
+static void print_hex_vga(uint32_t value, uint8_t color, int row, int start_col);
 // Port I/O
 static inline void outb(uint16_t port, uint8_t value);
 static inline uint8_t inb(uint16_t port);
@@ -181,9 +179,6 @@ static void serial_write(char c) {
     while ((inb(0x3F8 + 5) & 0x20) == 0);
     outb(0x3F8, c);
 }
-static void serial_print(const char* str) {
-    while (*str) serial_write(*str++);
-}
 static void serial_init(void) {
     outb(0x3F8 + 1, 0x00);
     outb(0x3F8 + 3, 0x80);
@@ -191,52 +186,36 @@ static void serial_init(void) {
     outb(0x3F8 + 1, 0x00);
     outb(0x3F8 + 3, 0x03);
     outb(0x3F8 + 2, 0xC7);
-    serial_write('S'); serial_write('E'); serial_write('R'); serial_write('\n');
+    // Do NOT print 'SER' here — we want pure VGA output
 }
 // ============================================================================
-// --- VGA TEXT MODE OUTPUT ---
+// --- VGA TEXT MODE OUTPUT (DIRECT WRITE) ---
 // ============================================================================
-static void print_char(char c, uint8_t color) {
+static void print_char_vga(char c, uint8_t color, int row, int col) {
     volatile char* video = (volatile char*)VIDEO_MEMORY;
-    static uint16_t cursor_pos = 0;
-    uint16_t pos_offset;
-    if (c == '\n') {
-        cursor_pos = (cursor_pos / 80 + 1) * 80;
-    } else {
-        pos_offset = cursor_pos * 2;
-        video[pos_offset] = c;
-        video[pos_offset + 1] = color;
-        cursor_pos++;
-    }
-    if (cursor_pos >= 80 * 25) {
-        for (size_t i = 0; i < 80 * 24; i++) {
-            video[i * 2] = video[(i + 80) * 2];
-            video[i * 2 + 1] = video[(i + 80) * 2 + 1];
-        }
-        for (size_t i = 0; i < 80; i++) {
-            video[(80 * 24 + i) * 2] = ' ';
-            video[(80 * 24 + i) * 2 + 1] = 0x0F;
-        }
-        cursor_pos = 80 * 24;
-    }
+    if (row < 0 || row >= 25 || col < 0 || col >= 80) return;
+    int pos = (row * 80 + col) * 2;
+    video[pos] = c;
+    video[pos + 1] = color;
 }
-static void print(const char* str) {
-    while (*str) {
-        if (*str == '\n') print_char('\n', 0x0F);
-        else print_char(*str, 0x0F);
+static void print_str_vga(const char* str, uint8_t color, int row, int start_col) {
+    int col = start_col;
+    while (*str && col < 80) {
+        print_char_vga(*str, color, row, col);
         str++;
+        col++;
     }
 }
-static void print_hex(uint32_t value) {
+static void print_hex_vga(uint32_t value, uint8_t color, int row, int start_col) {
     char hex_chars[] = "0123456789ABCDEF";
-    char hex_str[11];
-    hex_str[10] = '\0';
-    for (int i = 9; i >= 2; i--) {
-        hex_str[i] = hex_chars[value & 0x0F];
-        value >>= 4;
+    int col = start_col;
+    print_char_vga('0', color, row, col++); // '0'
+    print_char_vga('x', color, row, col++); // 'x'
+    for (int i = 0; i < 8; i++) {
+        int shift = (7 - i) * 4;
+        char digit = hex_chars[(value >> shift) & 0xF];
+        print_char_vga(digit, color, row, col++);
     }
-    hex_str[0] = '0'; hex_str[1] = 'x';
-    print(hex_str);
 }
 // ============================================================================
 // --- UTILITIES ---
@@ -301,17 +280,18 @@ static void* kmalloc(size_t size) {
     // PROPER ALIGNMENT
     size_t aligned_size = (size + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
     if (heap_offset + aligned_size >= KERNEL_HEAP_SIZE) {
-        serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
-        print_hex(size);
-        serial_print(" bytes. Free space: ");
-        print_hex(KERNEL_HEAP_SIZE - heap_offset);
-        serial_print(" bytes.\n");
+        // Print error to VGA
+        print_str_vga("[CRITICAL] kmalloc FAILED! Requested: ", 0x0C, 15, 0);
+        print_hex_vga(size, 0x0C, 15, 35);
+        print_str_vga(" bytes. Free space: ", 0x0C, 15, 50);
+        print_hex_vga(KERNEL_HEAP_SIZE - heap_offset, 0x0C, 15, 65);
+        print_str_vga(" bytes.", 0x0C, 15, 75);
         return NULL;
     }
     // --- NEW: Get metadata block from pre-allocated pool ---
     mem_block_t* block = free_metadata_list;
     if (!block) {
-        serial_print("[CRITICAL] kmalloc FAILED! No metadata blocks available.\n");
+        print_str_vga("[CRITICAL] kmalloc FAILED! No metadata blocks available.", 0x0C, 16, 0);
         return NULL; // Cannot track allocation without metadata
     }
     free_metadata_list = block->next; // Remove from free list
@@ -346,16 +326,15 @@ static void kfree(void* ptr) {
         current = current->next;
     }
     // If we get here, ptr was not found in the allocation list
-    serial_print("[WARNING] kfree: Attempted to free unallocated pointer: 0x");
-    print_hex((uint32_t)ptr);
-    serial_print("\n");
+    print_str_vga("[WARNING] kfree: Attempted to free unallocated pointer: 0x", 0x0C, 17, 0);
+    print_hex_vga((uint32_t)ptr, 0x0C, 17, 40);
 }
 static float get_system_memory_pressure(void) {
     // ORIGINAL CALCULATION IS CORRECT AND SIMPLE
     return 1.0f - ((float)(KERNEL_HEAP_SIZE - heap_offset) / (float)KERNEL_HEAP_SIZE);
 }
 static void perform_emergent_garbage_collection(void) {
-    serial_print("[MEMORY] 🌱 Initiating Emergent Garbage Collection...\n");
+    print_str_vga("[MEMORY] 🌱 Initiating Emergent Garbage Collection...", 0x0E, 18, 0);
     HyperVector pressure_thought = create_hyper_vector("SYSTEM_MEMORY_PRESSURE", 22);
     if (pressure_thought.valid) {
         broadcast_thought(&pressure_thought);
@@ -388,7 +367,7 @@ static void perform_emergent_garbage_collection(void) {
             current = current->next;
         }
     }
-    serial_print("[MEMORY] 🔄 GC Complete. Metadata blocks reclaimed.\n");
+    print_str_vga("[MEMORY] 🔄 GC Complete. Metadata blocks reclaimed.", 0x0E, 19, 0);
 }
 // ============================================================================
 // --- HYPERVECTOR SYSTEM ---
@@ -412,7 +391,7 @@ static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     vec.capacity = INITIAL_DIMENSIONS;
     vec.data = (float*)kmalloc(vec.capacity * sizeof(float));
     if (!vec.data) {
-        serial_print("[ERROR] create_hyper_vector: Out of memory!\n");
+        print_str_vga("[ERROR] create_hyper_vector: Out of memory!", 0x0C, 15, 0);
         vec.valid = 0;
         return vec;
     }
@@ -479,7 +458,7 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
 static struct Gene* create_gene(const char* name, HyperVector pattern) {
     struct Gene* gene = (struct Gene*)kmalloc(sizeof(struct Gene));
     if (!gene) {
-        serial_print("[ERROR] create_gene: Out of memory!\n");
+        print_str_vga("[ERROR] create_gene: Out of memory!", 0x0C, 15, 0);
         return NULL;
     }
     gene->pattern = copy_hyper_vector(&pattern);
@@ -508,7 +487,7 @@ static void initialize_collective_consciousness(void) {
     for (uint32_t i = 0; i < MAX_THOUGHTS; i++) {
         collective.thought_space[i].valid = 0;
     }
-    serial_print("[COLLECTIVE] 🌀 Consciousness initialized\n");
+    print_str_vga("[COLLECTIVE] 🌀 Consciousness initialized", 0x0A, 10, 0);
 }
 static void broadcast_thought(HyperVector* thought) {
     if (!thought || !thought->valid) return;
@@ -524,9 +503,8 @@ static void broadcast_thought(HyperVector* thought) {
     collective.thought_count++;
     float coherence = compute_coherence(thought);
     collective.global_coherence = (collective.global_coherence * 9.0f + coherence) / 10.0f;
-    serial_print("[BROADCAST] 💭 Thought added, coherence: ");
-    print_hex((uint32_t)(coherence * 1000));
-    serial_print("\n");
+    print_str_vga("[BROADCAST] 💭 Thought added, coherence: ", 0x0E, 11, 0);
+    print_hex_vga((uint32_t)(coherence * 1000), 0x0E, 11, 35);
 }
 static float compute_coherence(HyperVector* thought) {
     if (collective.thought_count == 0) return 1.0f;
@@ -549,13 +527,13 @@ static void initialize_holographic_memory(void) {
     for (uint32_t i = 0; i < MAX_MEMORY_ENTRIES; i++) {
         holo_system.memory_pool[i].valid = 0;
     }
-    print("🧠 Holographic memory system online.\n");
+    print_str_vga("🧠 Holographic memory system online.", 0x0B, 12, 0);
 }
 // ============================================================================
 // --- ENTITY MANAGEMENT ---
 // ============================================================================
 static void initialize_emergent_entities(void) {
-    serial_print("🧬 Initializing emergent entity pool...\n");
+    print_str_vga("🧬 Initializing emergent entity pool...", 0x0D, 13, 0);
     HyperVector base_pattern = create_hyper_vector("GENOME_ADAPTIVE", 16);
     for (uint32_t i = 0; i < INITIAL_ENTITIES && i < MAX_ENTITIES; i++) {
         struct Entity* e = &entity_pool[active_entity_count];
@@ -570,9 +548,9 @@ static void initialize_emergent_entities(void) {
         strncpy(e->domain_name, "adaptive", 31);
         e->domain_name[31] = '\0';
         active_entity_count++;
-        serial_print("  Entity ");
-        print_hex(e->id);
-        serial_print(" initialized.\n");
+        print_str_vga("  Entity ", 0x0F, 14, 0);
+        print_hex_vga(e->id, 0x0F, 14, 8);
+        print_str_vga(" initialized.", 0x0F, 14, 16);
     }
     destroy_hyper_vector(&base_pattern);
 }
@@ -602,11 +580,10 @@ static void update_entities(void) {
                 current = current->next;
             }
             if (weakest) {
-                serial_print("[MEMORY] Entity ");
-                print_hex(e->id);
-                serial_print(" proactively sacrifices gene: ");
-                serial_print(weakest->name);
-                serial_print("\n");
+                print_str_vga("[MEMORY] Entity ", 0x0C, 15, 0);
+                print_hex_vga(e->id, 0x0C, 15, 15);
+                print_str_vga(" proactively sacrifices gene: ", 0x0C, 15, 25);
+                print_str_vga(weakest->name, 0x0C, 15, 50);
                 destroy_hyper_vector(&weakest->pattern);
                 kfree(weakest);
                 e->gene_count--;
@@ -628,29 +605,58 @@ void kmain(void) {
     // --- NEW: Initialize metadata pool first ---
     initialize_metadata_pool();
     volatile char* vga = (volatile char*)VIDEO_MEMORY;
-    for (int i = 0; i < 5; i++) { vga[i*2] = "HYPER"[i]; vga[i*2+1] = 0x0F; }
-    serial_init();
+
+    // Clear screen
+    for (int row = 0; row < 25; row++) {
+        for (int col = 0; col < 80; col++) {
+            vga[(row * 80 + col) * 2] = ' ';
+            vga[(row * 80 + col) * 2 + 1] = 0x00;
+        }
+    }
+
+    // Print HYPER at top
+    for (int i = 0; i < 5; i++) {
+        vga[i * 2] = "HYPER"[i];
+        vga[i * 2 + 1] = 0x0F;
+    }
+
+    serial_init(); // Configure serial port, but do not print anything to it
     __asm__ volatile ("cli");
-    serial_print("🌌 Holographic Kernel with Emergent Memory Economy Starting...\n");
-    print("🌌 Holographic Kernel with Emergent Memory Economy Starting...\n");
+
+    // Print boot message to VGA
+    print_str_vga("🌌 Holographic Kernel with Emergent Memory Economy Starting...", 0x0E, 5, 0);
+
+    // Initialize systems
+    print_str_vga("Initializing holographic memory...", 0x0B, 6, 0);
     initialize_holographic_memory();
+
+    print_str_vga("Initializing collective consciousness...", 0x0A, 7, 0);
     initialize_collective_consciousness();
+
+    print_str_vga("Initializing emergent entities...", 0x0D, 8, 0);
     initialize_emergent_entities();
-    print("✅ System online. Entities managing memory.\n");
-    serial_print("[BOOT] 🚀 HyperKernel fully initialized. Emergent economy active.\n");
+
+    print_str_vga("✅ System online. Entities managing memory.", 0x0F, 9, 0);
+
+    // Boot complete indicator
+    print_str_vga("[BOOT] 🚀 HyperKernel fully initialized. Emergent economy active.", 0x0F, 10, 0);
+
     uint32_t last_update = 0;
     uint32_t last_report = 0;
     const uint32_t REPORT_INTERVAL = 3000000; // ~3 seconds
     const uint32_t MAX_REPORTS = 4;
+
     while (1) {
         // Update entities every ~0.5 sec
         if (holo_system.global_timestamp - last_update > 500000) {
             update_entities();
             last_update = holo_system.global_timestamp;
         }
+
         // Print system report every ~3 sec, max 4 times
         if (report_cycle < MAX_REPORTS &&
             holo_system.global_timestamp - last_report > REPORT_INTERVAL) {
+
             // Clear lines 20–24
             for (int row = 20; row < 25; row++) {
                 for (int col = 0; col < 80; col++) {
@@ -659,85 +665,42 @@ void kmain(void) {
                 }
             }
 
-            // === LINE 20: Header + Timestamp (NO STRCAT) ===
-            const char* base_header = "=== EMERGENT SYSTEM REPORT === TS:0x";
-            int col = 0;
-            while (base_header[col] && col < 80) {
-                vga[(20 * 80 + col) * 2] = base_header[col];
-                vga[(20 * 80 + col) * 2 + 1] = 0x0E; // Yellow
-                col++;
-            }
-            char ts_buf[9];
-            uint_to_str(holo_system.global_timestamp, ts_buf, 8);
-            for (int i = 0; i < 8 && col < 80; i++, col++) {
-                vga[(20 * 80 + col) * 2] = ts_buf[i];
-                vga[(20 * 80 + col) * 2 + 1] = 0x0E;
-            }
+            // Header with Timestamp
+            print_str_vga("=== EMERGENT SYSTEM REPORT === TS:0x", 0x0E, 20, 0);
+            print_hex_vga(holo_system.global_timestamp, 0x0E, 20, 28);
 
-            // === LINE 21: Memory Pressure ===
+            // Memory pressure
             float pressure = get_system_memory_pressure();
             uint32_t press_pct = (uint32_t)(pressure * 100);
             char mem_str[32] = "Mem:      %";
             uint_to_str(press_pct, mem_str + 5, 2);
-            for (int i = 0; mem_str[i] && i < 80; i++) {
-                vga[(21 * 80 + i) * 2] = mem_str[i];
-                vga[(21 * 80 + i) * 2 + 1] = 0x0F;
-            }
+            print_str_vga(mem_str, 0x0F, 21, 0);
 
-            // === LINE 22: Active Entities ===
+            // Active entities
             char ent_str[32] = "Ent:     ";
             uint_to_str(active_entity_count, ent_str + 5, 2);
-            for (int i = 0; ent_str[i] && i < 80; i++) {
-                vga[(22 * 80 + i) * 2] = ent_str[i];
-                vga[(22 * 80 + i) * 2 + 1] = 0x0A;
-            }
+            print_str_vga(ent_str, 0x0A, 22, 0);
 
-            // === LINE 23: Coherence ===
+            // Coherence
             uint32_t coh_pct = (uint32_t)(collective.global_coherence * 100);
             char coh_str[32] = "Coh:      %";
             uint_to_str(coh_pct, coh_str + 5, 2);
-            for (int i = 0; coh_str[i] && i < 80; i++) {
-                vga[(23 * 80 + i) * 2] = coh_str[i];
-                vga[(23 * 80 + i) * 2 + 1] = 0x0B;
-            }
+            print_str_vga(coh_str, 0x0B, 23, 0);
 
-            // === LINE 24: Cycle + GC Count (NO STRCAT) ===
-            const char* cyc_prefix = "Cycle: ";
-            col = 0;
-            while (cyc_prefix[col] && col < 80) {
-                vga[(24 * 80 + col) * 2] = cyc_prefix[col];
-                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
-                col++;
-            }
-            if (col < 80) {
-                vga[(24 * 80 + col) * 2] = '0' + (report_cycle % 10);
-                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
-                col++;
-            }
-            const char* cyc_suffix = " /4 GC:";
-            int s = 0;
-            while (cyc_suffix[s] && col < 80) {
-                vga[(24 * 80 + col) * 2] = cyc_suffix[s];
-                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
-                col++; s++;
-            }
+            // Cycle, GC Count, Timestamp
+            char cyc_str[32] = "Cycle:   /4";
+            cyc_str[7] = '0' + (report_cycle % 10);
+            cyc_str[8] = '\0';
+            print_str_vga(cyc_str, 0x0C, 24, 0);
+            print_str_vga(" GC:", 0x0C, 24, 10);
             char gc_buf[16];
             uint_to_str(gc_metadata_count, gc_buf, 6);
-            for (int i = 0; gc_buf[i] && col < 80; i++, col++) {
-                vga[(24 * 80 + col) * 2] = gc_buf[i];
-                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
-            }
+            print_str_vga(gc_buf, 0x0C, 24, 14);
 
-            serial_print("[REPORT] System snapshot printed to VGA at timestamp 0x");
-            print_hex(holo_system.global_timestamp);
-            serial_print(". Active Entities: ");
-            print_hex(active_entity_count);
-            serial_print(", GC Metadata Blocks: ");
-            print_hex(gc_metadata_count);
-            serial_print("\n");
             last_report = holo_system.global_timestamp;
             report_cycle++;
         }
+
         holo_system.global_timestamp++;
         __asm__ volatile("hlt");
     }
