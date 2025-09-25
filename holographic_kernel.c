@@ -4,7 +4,6 @@
 // Entities trade, sacrifice, and evolve to manage memory as a living system.
 // No traditional malloc/free — memory is governed by artificial life.
 // ============================================================================
-
 // ============================================================================
 // --- TYPE DEFINITIONS ---
 // ============================================================================
@@ -16,7 +15,6 @@ typedef unsigned long   uintptr_t;
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
-
 // ============================================================================
 // --- CONFIGURATION ---
 // ============================================================================
@@ -32,7 +30,6 @@ typedef unsigned long   uintptr_t;
 #define KERNEL_HEAP_SIZE 0xC0000 // 768KB heap at 0xA0000
 // --- NEW: Pre-allocated metadata pool ---
 #define MAX_ALLOCATIONS 512 // Adjust based on expected max allocations
-
 // ============================================================================
 // --- STRUCTURE DEFINITIONS ---
 // ============================================================================
@@ -43,7 +40,6 @@ typedef struct {
     uint32_t hash_sig;
     uint8_t valid;
 } HyperVector;
-
 typedef struct Gene {
     HyperVector pattern;
     struct Gene* next;
@@ -51,7 +47,6 @@ typedef struct Gene {
     uint8_t mutable;
     char name[16];
 } Gene;
-
 struct Entity {
     uint32_t id;
     HyperVector state;
@@ -73,33 +68,28 @@ struct Entity {
     uint8_t is_mutant;
     uint32_t mutation_rate;
 };
-
 struct CollectiveConsciousness {
     HyperVector thought_space[MAX_THOUGHTS];
     uint32_t thought_count;
     float global_coherence;
 };
-
 typedef struct {
     HyperVector input_pattern;
     HyperVector output_pattern;
     uint32_t timestamp;
     uint8_t valid;
 } MemoryEntry;
-
 typedef struct {
     HyperVector pattern;
     HyperVector replacement;
     uint32_t address;
     uint8_t applied;
 } KernelPatch;
-
 struct HolographicSystem {
     MemoryEntry memory_pool[MAX_MEMORY_ENTRIES];
     uint32_t memory_count;
     uint32_t global_timestamp;
 };
-
 // --- METADATA BLOCK STRUCTURE ---
 typedef struct mem_block {
     void* ptr;
@@ -109,7 +99,6 @@ typedef struct mem_block {
     uint8_t is_garbage;
     struct mem_block* next;
 } mem_block_t;
-
 // ============================================================================
 // --- KERNEL HEAP (allocated by linker at 0xA0000) ---
 // ============================================================================
@@ -121,10 +110,8 @@ static mem_block_t metadata_pool[MAX_ALLOCATIONS];
 static mem_block_t* free_metadata_list = NULL;
 static mem_block_t* allocation_list = NULL; // Head of active allocations
 static uint32_t allocation_counter = 0;
-
 // --- NEW: Track garbage collected metadata blocks ---
 static uint32_t gc_metadata_count = 0;
-
 // ============================================================================
 // --- GLOBAL VARIABLES ---
 // ============================================================================
@@ -133,7 +120,6 @@ static uint32_t active_entity_count = 0;
 static struct HolographicSystem holo_system = {0};
 static struct CollectiveConsciousness collective = {0};
 static uint32_t report_cycle = 0; // For periodic VGA reports
-
 // ============================================================================
 // --- FUNCTION PROTOTYPES ---
 // ============================================================================
@@ -142,30 +128,24 @@ static void* kmalloc(size_t size);
 static void kfree(void* ptr);
 static void perform_emergent_garbage_collection(void);
 static float get_system_memory_pressure(void);
-
 // HyperVector
 static uint32_t hash_data(const void* input, uint32_t size);
 static HyperVector create_hyper_vector(const void* input, uint32_t size);
 static HyperVector copy_hyper_vector(const HyperVector* src);
 static void destroy_hyper_vector(HyperVector* vec);
 static float compute_similarity(HyperVector* a, HyperVector* b);
-
 // Genome
 static struct Gene* create_gene(const char* name, HyperVector pattern);
 static void destroy_genome(struct Gene* genome);
-
 // Collective Consciousness
 static void initialize_collective_consciousness(void);
 static void broadcast_thought(HyperVector* thought);
 static float compute_coherence(HyperVector* thought);
-
 // Holographic Memory
 static void initialize_holographic_memory(void);
-
 // Entity Management
 static void initialize_emergent_entities(void);
 static void update_entities(void);
-
 // I/O
 static void serial_init(void);
 static void serial_write(char c);
@@ -173,11 +153,9 @@ static void serial_print(const char* str);
 static void print_char(char c, uint8_t color);
 static void print(const char* str);
 static void print_hex(uint32_t value);
-
 // Port I/O
 static inline void outb(uint16_t port, uint8_t value);
 static inline uint8_t inb(uint16_t port);
-
 // Utilities
 static void* memcpy(void* dest, const void* src, size_t n);
 static void* memset(void* ptr, int value, size_t n);
@@ -185,7 +163,6 @@ static float sqrtf(float x);
 static size_t strlen(const char *str);
 static char *strncpy(char *dest, const char *src, size_t n);
 static void uint_to_str(uint32_t num, char* buf, uint8_t width);
-
 // ============================================================================
 // --- PORT I/O ---
 // ============================================================================
@@ -197,7 +174,6 @@ static inline uint8_t inb(uint16_t port) {
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
-
 // ============================================================================
 // --- SERIAL I/O ---
 // ============================================================================
@@ -205,11 +181,9 @@ static void serial_write(char c) {
     while ((inb(0x3F8 + 5) & 0x20) == 0);
     outb(0x3F8, c);
 }
-
 static void serial_print(const char* str) {
     while (*str) serial_write(*str++);
 }
-
 static void serial_init(void) {
     outb(0x3F8 + 1, 0x00);
     outb(0x3F8 + 3, 0x80);
@@ -219,7 +193,6 @@ static void serial_init(void) {
     outb(0x3F8 + 2, 0xC7);
     serial_write('S'); serial_write('E'); serial_write('R'); serial_write('\n');
 }
-
 // ============================================================================
 // --- VGA TEXT MODE OUTPUT ---
 // ============================================================================
@@ -247,7 +220,6 @@ static void print_char(char c, uint8_t color) {
         cursor_pos = 80 * 24;
     }
 }
-
 static void print(const char* str) {
     while (*str) {
         if (*str == '\n') print_char('\n', 0x0F);
@@ -255,7 +227,6 @@ static void print(const char* str) {
         str++;
     }
 }
-
 static void print_hex(uint32_t value) {
     char hex_chars[] = "0123456789ABCDEF";
     char hex_str[11];
@@ -267,7 +238,6 @@ static void print_hex(uint32_t value) {
     hex_str[0] = '0'; hex_str[1] = 'x';
     print(hex_str);
 }
-
 // ============================================================================
 // --- UTILITIES ---
 // ============================================================================
@@ -277,13 +247,11 @@ static void* memcpy(void* dest, const void* src, size_t n) {
     for (size_t i = 0; i < n; i++) d[i] = s[i];
     return dest;
 }
-
 static void* memset(void* ptr, int value, size_t n) {
     uint8_t* p = (uint8_t*)ptr;
     for (size_t i = 0; i < n; i++) p[i] = (uint8_t)value;
     return ptr;
 }
-
 static float sqrtf(float x) {
     if (x <= 0.0f) return 0.0f;
     float x_half = 0.5f * x;
@@ -293,18 +261,15 @@ static float sqrtf(float x) {
     x = u.f * (1.5f - x_half * x * x);
     return 1.0f / x;
 }
-
 static size_t strlen(const char *str) {
     const char *s; for (s = str; *s; ++s); return (s - str);
 }
-
 static char *strncpy(char *dest, const char *src, size_t n) {
     size_t i;
     for (i = 0; i < n && src[i] != '\0'; i++) dest[i] = src[i];
     for (; i < n; i++) dest[i] = '\0';
     return dest;
 }
-
 // --- MINIMAL INTEGER TO STRING (for bare-metal) ---
 static void uint_to_str(uint32_t num, char* buf, uint8_t width) {
     for (int i = 0; i < width; i++) buf[i] = ' ';
@@ -320,7 +285,6 @@ static void uint_to_str(uint32_t num, char* buf, uint8_t width) {
         pos--;
     }
 }
-
 // ============================================================================
 // --- MEMORY ALLOCATION (EMERGENT ECONOMY - FIXED METADATA) ---
 // ============================================================================
@@ -332,13 +296,10 @@ static void initialize_metadata_pool() {
     metadata_pool[MAX_ALLOCATIONS - 1].next = NULL; // Last one points to NULL
     free_metadata_list = &metadata_pool[0]; // Start with first block as free
 }
-
 static void* kmalloc(size_t size) {
     if (size == 0) return NULL; // Handle zero-size allocation
-
     // PROPER ALIGNMENT
     size_t aligned_size = (size + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
-
     if (heap_offset + aligned_size >= KERNEL_HEAP_SIZE) {
         serial_print("[CRITICAL] kmalloc FAILED! Requested: ");
         print_hex(size);
@@ -347,7 +308,6 @@ static void* kmalloc(size_t size) {
         serial_print(" bytes.\n");
         return NULL;
     }
-
     // --- NEW: Get metadata block from pre-allocated pool ---
     mem_block_t* block = free_metadata_list;
     if (!block) {
@@ -355,10 +315,8 @@ static void* kmalloc(size_t size) {
         return NULL; // Cannot track allocation without metadata
     }
     free_metadata_list = block->next; // Remove from free list
-
     void* ptr = &kernel_heap[heap_offset];
     heap_offset += aligned_size;
-
     // Initialize the metadata block
     block->ptr = ptr;
     block->size = aligned_size;
@@ -368,10 +326,8 @@ static void* kmalloc(size_t size) {
     // Add to active allocation list
     block->next = allocation_list;
     allocation_list = block;
-
     return ptr;
 }
-
 static void kfree(void* ptr) {
     if (!ptr) return;
     mem_block_t* current = allocation_list;
@@ -394,12 +350,10 @@ static void kfree(void* ptr) {
     print_hex((uint32_t)ptr);
     serial_print("\n");
 }
-
 static float get_system_memory_pressure(void) {
     // ORIGINAL CALCULATION IS CORRECT AND SIMPLE
     return 1.0f - ((float)(KERNEL_HEAP_SIZE - heap_offset) / (float)KERNEL_HEAP_SIZE);
 }
-
 static void perform_emergent_garbage_collection(void) {
     serial_print("[MEMORY] 🌱 Initiating Emergent Garbage Collection...\n");
     HyperVector pressure_thought = create_hyper_vector("SYSTEM_MEMORY_PRESSURE", 22);
@@ -409,7 +363,6 @@ static void perform_emergent_garbage_collection(void) {
     }
     uint32_t entities_deactivated = 0;
     uint32_t genes_destroyed = 0;
-
     // --- NEW: Process garbage list and return metadata to pool ---
     mem_block_t* current = allocation_list;
     mem_block_t* prev = NULL;
@@ -426,7 +379,6 @@ static void perform_emergent_garbage_collection(void) {
             }
             mem_block_t* to_reclaim = current;
             current = current->next; // Move to next before reclaiming
-
             // Add metadata block back to the free pool
             to_reclaim->next = free_metadata_list;
             free_metadata_list = to_reclaim;
@@ -436,11 +388,8 @@ static void perform_emergent_garbage_collection(void) {
             current = current->next;
         }
     }
-
     serial_print("[MEMORY] 🔄 GC Complete. Metadata blocks reclaimed.\n");
 }
-
-
 // ============================================================================
 // --- HYPERVECTOR SYSTEM ---
 // ============================================================================
@@ -454,7 +403,6 @@ static uint32_t hash_data(const void* input, uint32_t size) {
     }
     return hash;
 }
-
 static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     HyperVector vec = {0};
     if (!input || size == 0) { // Add safety check
@@ -482,7 +430,6 @@ static HyperVector create_hyper_vector(const void* input, uint32_t size) {
     vec.valid = 1;
     return vec;
 }
-
 static HyperVector copy_hyper_vector(const HyperVector* src) {
     HyperVector dst = {0};
     if (!src || !src->valid || !src->data) return dst;
@@ -495,7 +442,6 @@ static HyperVector copy_hyper_vector(const HyperVector* src) {
     dst.valid = 1;
     return dst;
 }
-
 static void destroy_hyper_vector(HyperVector* vec) {
     if (vec && vec->data) {
         kfree(vec->data); // This calls kfree, which might trigger GC, but GC now handles metadata safely
@@ -505,12 +451,10 @@ static void destroy_hyper_vector(HyperVector* vec) {
         vec->valid = 0;       // ADD THIS: Mark invalid
     }
 }
-
 static float compute_similarity(HyperVector* a, HyperVector* b) {
     // ENHANCED NULL/BOUNDS CHECKING
     if (!a || !b || !a->valid || !b->valid || !a->data || !b->data) return 0.0f;
     if (a->active_dims == 0 || b->active_dims == 0) return 0.0f; // ADD THIS: Check for empty vectors
-
     uint32_t min_dims = (a->active_dims < b->active_dims) ? a->active_dims : b->active_dims;
     // ADD SAFETY CAP (This is implicitly handled by min_dims calculation, but let's be explicit about capacity)
     if (min_dims > a->capacity || min_dims > b->capacity) {
@@ -518,7 +462,6 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
         min_dims = (a->capacity < b->capacity) ? a->capacity : b->capacity;
     }
     if (min_dims == 0) return 0.0f; // Safety check after capacity adjustment
-
     float dot = 0.0f, mag_a = 0.0f, mag_b = 0.0f;
     for (uint32_t i = 0; i < min_dims; i++) {
         dot += a->data[i] * b->data[i];
@@ -530,7 +473,6 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
     if (mag_a * mag_b < 1e-10f) return 0.0f;
     return dot / (mag_a * mag_b);
 }
-
 // ============================================================================
 // --- GENOME SYSTEM ---
 // ============================================================================
@@ -548,7 +490,6 @@ static struct Gene* create_gene(const char* name, HyperVector pattern) {
     gene->name[15] = '\0';
     return gene;
 }
-
 static void destroy_genome(struct Gene* genome) {
     struct Gene* current = genome;
     while (current) {
@@ -558,7 +499,6 @@ static void destroy_genome(struct Gene* genome) {
         current = next;
     }
 }
-
 // ============================================================================
 // --- COLLECTIVE CONSCIOUSNESS ---
 // ============================================================================
@@ -570,7 +510,6 @@ static void initialize_collective_consciousness(void) {
     }
     serial_print("[COLLECTIVE] 🌀 Consciousness initialized\n");
 }
-
 static void broadcast_thought(HyperVector* thought) {
     if (!thought || !thought->valid) return;
     if (collective.thought_count >= MAX_THOUGHTS) {
@@ -589,7 +528,6 @@ static void broadcast_thought(HyperVector* thought) {
     print_hex((uint32_t)(coherence * 1000));
     serial_print("\n");
 }
-
 static float compute_coherence(HyperVector* thought) {
     if (collective.thought_count == 0) return 1.0f;
     float coherence = 0.0f;
@@ -602,7 +540,6 @@ static float compute_coherence(HyperVector* thought) {
     }
     return valid_count ? coherence / valid_count : 0.0f;
 }
-
 // ============================================================================
 // --- HOLOGRAPHIC MEMORY ---
 // ============================================================================
@@ -614,7 +551,6 @@ static void initialize_holographic_memory(void) {
     }
     print("🧠 Holographic memory system online.\n");
 }
-
 // ============================================================================
 // --- ENTITY MANAGEMENT ---
 // ============================================================================
@@ -640,7 +576,6 @@ static void initialize_emergent_entities(void) {
     }
     destroy_hyper_vector(&base_pattern);
 }
-
 static void update_entities(void) {
     static uint8_t next_active[MAX_ENTITIES];
     static HyperVector next_state[MAX_ENTITIES];
@@ -685,7 +620,6 @@ static void update_entities(void) {
         entity_pool[i].domain_name[31] = '\0';
     }
 }
-
 // ============================================================================
 // --- KERNEL ENTRY POINT ---
 // ============================================================================
@@ -693,7 +627,6 @@ void kmain(void) __attribute__((noreturn));
 void kmain(void) {
     // --- NEW: Initialize metadata pool first ---
     initialize_metadata_pool();
-
     volatile char* vga = (volatile char*)VIDEO_MEMORY;
     for (int i = 0; i < 5; i++) { vga[i*2] = "HYPER"[i]; vga[i*2+1] = 0x0F; }
     serial_init();
@@ -705,23 +638,19 @@ void kmain(void) {
     initialize_emergent_entities();
     print("✅ System online. Entities managing memory.\n");
     serial_print("[BOOT] 🚀 HyperKernel fully initialized. Emergent economy active.\n");
-
     uint32_t last_update = 0;
     uint32_t last_report = 0;
     const uint32_t REPORT_INTERVAL = 3000000; // ~3 seconds
     const uint32_t MAX_REPORTS = 4;
-
     while (1) {
         // Update entities every ~0.5 sec
         if (holo_system.global_timestamp - last_update > 500000) {
             update_entities();
             last_update = holo_system.global_timestamp;
         }
-
         // Print system report every ~3 sec, max 4 times
         if (report_cycle < MAX_REPORTS &&
             holo_system.global_timestamp - last_report > REPORT_INTERVAL) {
-
             // Clear lines 20–24
             for (int row = 20; row < 25; row++) {
                 for (int col = 0; col < 80; col++) {
@@ -730,57 +659,73 @@ void kmain(void) {
                 }
             }
 
-            // Header with Timestamp
-            char header[80] = "=== EMERGENT SYSTEM REPORT ==="; // Increased buffer size
-            // Append timestamp to header
-            char ts_str[32] = " TS:0x";
-            uint_to_str(holo_system.global_timestamp, ts_str + 5, 8); // Print timestamp as hex
-            strcat(header, ts_str);
-            for (int i = 0; i < 80 && header[i]; i++) { // Print up to 80 chars
-                vga[(20 * 80 + i) * 2] = header[i];
-                vga[(20 * 80 + i) * 2 + 1] = 0x0E; // Yellow
+            // === LINE 20: Header + Timestamp (NO STRCAT) ===
+            const char* base_header = "=== EMERGENT SYSTEM REPORT === TS:0x";
+            int col = 0;
+            while (base_header[col] && col < 80) {
+                vga[(20 * 80 + col) * 2] = base_header[col];
+                vga[(20 * 80 + col) * 2 + 1] = 0x0E; // Yellow
+                col++;
+            }
+            char ts_buf[9];
+            uint_to_str(holo_system.global_timestamp, ts_buf, 8);
+            for (int i = 0; i < 8 && col < 80; i++, col++) {
+                vga[(20 * 80 + col) * 2] = ts_buf[i];
+                vga[(20 * 80 + col) * 2 + 1] = 0x0E;
             }
 
-            // Memory pressure
+            // === LINE 21: Memory Pressure ===
             float pressure = get_system_memory_pressure();
             uint32_t press_pct = (uint32_t)(pressure * 100);
             char mem_str[32] = "Mem:      %";
             uint_to_str(press_pct, mem_str + 5, 2);
-            for (int i = 0; mem_str[i]; i++) {
+            for (int i = 0; mem_str[i] && i < 80; i++) {
                 vga[(21 * 80 + i) * 2] = mem_str[i];
                 vga[(21 * 80 + i) * 2 + 1] = 0x0F;
             }
 
-            // Active entities
+            // === LINE 22: Active Entities ===
             char ent_str[32] = "Ent:     ";
             uint_to_str(active_entity_count, ent_str + 5, 2);
-            for (int i = 0; ent_str[i]; i++) {
+            for (int i = 0; ent_str[i] && i < 80; i++) {
                 vga[(22 * 80 + i) * 2] = ent_str[i];
                 vga[(22 * 80 + i) * 2 + 1] = 0x0A;
             }
 
-            // Coherence
+            // === LINE 23: Coherence ===
             uint32_t coh_pct = (uint32_t)(collective.global_coherence * 100);
             char coh_str[32] = "Coh:      %";
             uint_to_str(coh_pct, coh_str + 5, 2);
-            for (int i = 0; coh_str[i]; i++) {
+            for (int i = 0; coh_str[i] && i < 80; i++) {
                 vga[(23 * 80 + i) * 2] = coh_str[i];
                 vga[(23 * 80 + i) * 2 + 1] = 0x0B;
             }
 
-            // Cycle, GC Count, Timestamp
-            char cyc_str[32] = "Cycle:   /4"; // Increased buffer size
-            cyc_str[7] = '0' + (report_cycle % 10); // Ensure single digit
-            cyc_str[8] = '\0'; // Now safe
-            // Append GC count
-            strcat(cyc_str, " GC:");
-            char gc_str[16];
-            uint_to_str(gc_metadata_count, gc_str, 6); // Print GC count
-            strcat(cyc_str, gc_str);
-            // Print up to 31 chars or null terminator
-            for (int i = 0; i < 31 && cyc_str[i]; i++) {
-                vga[(24 * 80 + i) * 2] = cyc_str[i];
-                vga[(24 * 80 + i) * 2 + 1] = 0x0C;
+            // === LINE 24: Cycle + GC Count (NO STRCAT) ===
+            const char* cyc_prefix = "Cycle: ";
+            col = 0;
+            while (cyc_prefix[col] && col < 80) {
+                vga[(24 * 80 + col) * 2] = cyc_prefix[col];
+                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
+                col++;
+            }
+            if (col < 80) {
+                vga[(24 * 80 + col) * 2] = '0' + (report_cycle % 10);
+                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
+                col++;
+            }
+            const char* cyc_suffix = " /4 GC:";
+            int s = 0;
+            while (cyc_suffix[s] && col < 80) {
+                vga[(24 * 80 + col) * 2] = cyc_suffix[s];
+                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
+                col++; s++;
+            }
+            char gc_buf[16];
+            uint_to_str(gc_metadata_count, gc_buf, 6);
+            for (int i = 0; gc_buf[i] && col < 80; i++, col++) {
+                vga[(24 * 80 + col) * 2] = gc_buf[i];
+                vga[(24 * 80 + col) * 2 + 1] = 0x0C;
             }
 
             serial_print("[REPORT] System snapshot printed to VGA at timestamp 0x");
@@ -790,11 +735,9 @@ void kmain(void) {
             serial_print(", GC Metadata Blocks: ");
             print_hex(gc_metadata_count);
             serial_print("\n");
-
             last_report = holo_system.global_timestamp;
             report_cycle++;
         }
-
         holo_system.global_timestamp++;
         __asm__ volatile("hlt");
     }
