@@ -109,6 +109,7 @@ static mem_block_t metadata_pool[MAX_ALLOCATIONS];
 static mem_block_t* free_metadata_list = NULL;
 static mem_block_t* allocation_list = NULL; // Head of active allocations
 static uint32_t allocation_counter = 0;
+// --- NEW: Track garbage collected metadata blocks ---
 static uint32_t gc_metadata_count = 0;
 // ============================================================================
 // --- GLOBAL VARIABLES ---
