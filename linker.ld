@@ -17,7 +17,7 @@ SECTIONS
     }
 
     /* --- Reserve 768KB for the kernel heap at 0xA0000 --- */
-    . = 0xA0000;
+    . = 0x100000;
     kernel_heap_start = .;
     . += 0xC0000;  /* 768KB — hard-coded numeric value */
 
