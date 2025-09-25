@@ -150,6 +150,10 @@ static HyperVector copy_hyper_vector(const HyperVector* src);
 static void destroy_hyper_vector(HyperVector* vec);
 static float compute_similarity(HyperVector* a, HyperVector* b);
 
+// Genome
+static struct Gene* create_gene(const char* name, HyperVector pattern);
+static void destroy_genome(struct Gene* genome);
+
 // Collective Consciousness
 static void initialize_collective_consciousness(void);
 static void broadcast_thought(HyperVector* thought);
@@ -371,7 +375,7 @@ static void* kmalloc(size_t size) {
 static void kfree(void* ptr) {
     if (!ptr) return;
     mem_block_t* current = allocation_list;
-    // mem_block_t* prev = NULL; // Removed: unused variable
+    mem_block_t* prev = NULL;
     while (current) {
         if (current->ptr == ptr) {
             // --- NEW: Mark as garbage, don't immediately free metadata ---
@@ -382,7 +386,7 @@ static void kfree(void* ptr) {
             }
             return; // Found and marked, exit
         }
-        // prev = current; // Removed: unused variable
+        prev = current;
         current = current->next;
     }
     // If we get here, ptr was not found in the allocation list
@@ -403,8 +407,8 @@ static void perform_emergent_garbage_collection(void) {
         broadcast_thought(&pressure_thought);
         destroy_hyper_vector(&pressure_thought);
     }
-    // uint32_t entities_deactivated = 0; // Removed: unused variable
-    // uint32_t genes_destroyed = 0;      // Removed: unused variable
+    uint32_t entities_deactivated = 0;
+    uint32_t genes_destroyed = 0;
 
     // --- NEW: Process garbage list and return metadata to pool ---
     mem_block_t* current = allocation_list;
@@ -528,6 +532,34 @@ static float compute_similarity(HyperVector* a, HyperVector* b) {
 }
 
 // ============================================================================
+// --- GENOME SYSTEM ---
+// ============================================================================
+static struct Gene* create_gene(const char* name, HyperVector pattern) {
+    struct Gene* gene = (struct Gene*)kmalloc(sizeof(struct Gene));
+    if (!gene) {
+        serial_print("[ERROR] create_gene: Out of memory!\n");
+        return NULL;
+    }
+    gene->pattern = copy_hyper_vector(&pattern);
+    gene->next = NULL;
+    gene->fitness = 0;
+    gene->mutable = 1;
+    strncpy(gene->name, name, 15);
+    gene->name[15] = '\0';
+    return gene;
+}
+
+static void destroy_genome(struct Gene* genome) {
+    struct Gene* current = genome;
+    while (current) {
+        struct Gene* next = current->next;
+        destroy_hyper_vector(&current->pattern);
+        kfree(current);
+        current = next;
+    }
+}
+
+// ============================================================================
 // --- COLLECTIVE CONSCIOUSNESS ---
 // ============================================================================
 static void initialize_collective_consciousness(void) {
@@ -593,8 +625,8 @@ static void initialize_emergent_entities(void) {
         struct Entity* e = &entity_pool[active_entity_count];
         e->id = active_entity_count;
         e->state = create_hyper_vector("TRAIT_DORMANT", 14);
-        e->genome = NULL; // Initialize genome to NULL
-        e->gene_count = 0; // Initialize gene count to 0
+        e->genome = create_gene("base", base_pattern);
+        e->gene_count = 1;
         e->age = 0;
         e->is_active = 1;
         e->confidence = 0.5f;
@@ -628,12 +660,21 @@ static void update_entities(void) {
         next_domain[i][31] = '\0';
         e->age++;
         if (e->age % 500 == 0 && e->gene_count > 1 && get_system_memory_pressure() > 0.7f) {
-            // Simple gene sacrifice logic (example)
-            if (e->gene_count > 0) {
+            struct Gene* weakest = NULL;
+            struct Gene* current = e->genome;
+            while (current) {
+                if (!weakest || current->fitness < weakest->fitness) weakest = current;
+                current = current->next;
+            }
+            if (weakest) {
                 serial_print("[MEMORY] Entity ");
                 print_hex(e->id);
-                serial_print(" proactively sacrifices a gene (simplified logic).\n");
-                e->gene_count--; // Decrement gene count
+                serial_print(" proactively sacrifices gene: ");
+                serial_print(weakest->name);
+                serial_print("\n");
+                destroy_hyper_vector(&weakest->pattern);
+                kfree(weakest);
+                e->gene_count--;
             }
         }
     }
@@ -689,18 +730,13 @@ void kmain(void) {
                 }
             }
 
-            // Header with Timestamp (Manual concatenation)
-            char header[80] = "=== EMERGENT SYSTEM REPORT ==="; // Base string
-            char ts_str[32] = " TS:0x"; // Timestamp part
-            uint_to_str(holo_system.global_timestamp, ts_str + 5, 8); // Fill timestamp into ts_str
-            // Calculate lengths and copy
-            size_t header_len = strlen(header);
-            size_t ts_len = strlen(ts_str);
-            if (header_len + ts_len < sizeof(header)) { // Safety check
-                memcpy(header + header_len, ts_str, ts_len + 1); // +1 to copy null terminator
-            }
-            // Print header
-            for (int i = 0; i < 80 && header[i]; i++) { // Print up to 80 chars or null terminator
+            // Header with Timestamp
+            char header[80] = "=== EMERGENT SYSTEM REPORT ==="; // Increased buffer size
+            // Append timestamp to header
+            char ts_str[32] = " TS:0x";
+            uint_to_str(holo_system.global_timestamp, ts_str + 5, 8); // Print timestamp as hex
+            strcat(header, ts_str);
+            for (int i = 0; i < 80 && header[i]; i++) { // Print up to 80 chars
                 vga[(20 * 80 + i) * 2] = header[i];
                 vga[(20 * 80 + i) * 2 + 1] = 0x0E; // Yellow
             }
@@ -732,27 +768,15 @@ void kmain(void) {
                 vga[(23 * 80 + i) * 2 + 1] = 0x0B;
             }
 
-            // Cycle, GC Count, Timestamp (Manual concatenation)
-            char cyc_str[32] = "Cycle:   /4"; // Base string
+            // Cycle, GC Count, Timestamp
+            char cyc_str[32] = "Cycle:   /4"; // Increased buffer size
             cyc_str[7] = '0' + (report_cycle % 10); // Ensure single digit
             cyc_str[8] = '\0'; // Now safe
             // Append GC count
-            char gc_str_part[16] = " GC:"; // GC part
-            char gc_num_str[16];
-            uint_to_str(gc_metadata_count, gc_num_str, 6); // Print GC count to string
-            // Calculate lengths and copy GC part
-            size_t cyc_len = strlen(cyc_str);
-            size_t gc_part_len = strlen(gc_str_part);
-            if (cyc_len + gc_part_len < sizeof(cyc_str)) { // Safety check
-                memcpy(cyc_str + cyc_len, gc_str_part, gc_part_len);
-                cyc_len += gc_part_len; // Update length
-            }
-            // Calculate lengths and copy GC number
-            size_t gc_num_len = strlen(gc_num_str);
-            if (cyc_len + gc_num_len < sizeof(cyc_str)) { // Safety check
-                memcpy(cyc_str + cyc_len, gc_num_str, gc_num_len + 1); // +1 for null terminator
-            }
-
+            strcat(cyc_str, " GC:");
+            char gc_str[16];
+            uint_to_str(gc_metadata_count, gc_str, 6); // Print GC count
+            strcat(cyc_str, gc_str);
             // Print up to 31 chars or null terminator
             for (int i = 0; i < 31 && cyc_str[i]; i++) {
                 vga[(24 * 80 + i) * 2] = cyc_str[i];
