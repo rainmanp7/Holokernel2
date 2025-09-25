@@ -1,9 +1,8 @@
 // ============================================================================
 // HOLOGRAPHIC KERNEL WITH EMERGENT MEMORY ECONOMY — VGA-ONLY BOOT DIAGNOSTICS
 // ============================================================================
-// All boot output goes to VGA. No serial dependency.
+// All boot output goes to VGA. NO SERIAL DEPENDENCY.
 // ============================================================================
-
 // ============================================================================
 // --- TYPE DEFINITIONS ---
 // ============================================================================
@@ -134,78 +133,39 @@ static uint32_t report_cycle = 0;
 // ============================================================================
 // --- FUNCTION PROTOTYPES ---
 // ============================================================================
-// Memory
 static void* kmalloc(size_t size);
 static void kfree(void* ptr);
 static void perform_emergent_garbage_collection(void);
 static float get_system_memory_pressure(void);
 
-// HyperVector
 static uint32_t hash_data(const void* input, uint32_t size);
 static HyperVector create_hyper_vector(const void* input, uint32_t size);
 static HyperVector copy_hyper_vector(const HyperVector* src);
 static void destroy_hyper_vector(HyperVector* vec);
 static float compute_similarity(HyperVector* a, HyperVector* b);
 
-// Genome
 static struct Gene* create_gene(const char* name, HyperVector pattern);
-static void destroy_genome(struct Gene* genome);  // May be used later
+static void destroy_genome(struct Gene* genome) __attribute__((unused));
 
-// Collective Consciousness
 static void initialize_collective_consciousness(void);
 static void broadcast_thought(HyperVector* thought);
 static float compute_coherence(HyperVector* thought);
 
-// Holographic Memory
 static void initialize_holographic_memory(void);
-
-// Entity Management
 static void initialize_emergent_entities(void);
 static void update_entities(void);
 
-// I/O
-static void serial_init(void);  // Configures but does not output
 static void print_char_vga(char c, uint8_t color, int row, int col);
 static void print_str_vga(const char* str, uint8_t color, int row, int start_col);
 static void print_hex_vga(uint32_t value, uint8_t color, int row, int start_col);
+static void vga_panic(const char* msg) __attribute__((noreturn));
 
-// Port I/O
-static inline void outb(uint16_t port, uint8_t value);
-static inline uint8_t inb(uint16_t port);
-
-// Utilities
 static void* memcpy(void* dest, const void* src, size_t n);
 static void* memset(void* ptr, int value, size_t n);
 static float sqrtf(float x);
-static size_t strlen(const char *str);
+static size_t strlen(const char *str) __attribute__((unused));
 static char* strncpy(char *dest, const char *src, size_t n);
 static void uint_to_str(uint32_t num, char* buf, uint8_t width);
-
-// ============================================================================
-// --- PORT I/O ---
-// ============================================================================
-static inline void outb(uint16_t port, uint8_t value) {
-    __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-
-static inline uint8_t inb(uint16_t port) {
-    uint8_t ret;
-    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-// ============================================================================
-// --- SERIAL I/O (CONFIG ONLY — NO OUTPUT) ---
-// ============================================================================
-static void serial_init(void) {
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x80);
-    outb(0x3F8 + 0, 0x03);
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x03);
-    outb(0x3F8 + 2, 0xC7);
-    // No output — pure VGA mode
-}
 
 // ============================================================================
 // --- VGA TEXT MODE OUTPUT ---
@@ -237,6 +197,24 @@ static void print_hex_vga(uint32_t value, uint8_t color, int row, int start_col)
         char digit = hex_chars[(value >> shift) & 0xF];
         print_char_vga(digit, color, row, col++);
     }
+}
+
+// ============================================================================
+// --- PANIC FUNCTION (HALTS CPU) ---
+// ============================================================================
+static void vga_panic(const char* msg) {
+    __asm__ volatile ("cli");
+    volatile char* vga = (volatile char*)VIDEO_MEMORY;
+    for (int row = 0; row < 25; row++) {
+        for (int col = 0; col < 80; col++) {
+            vga[(row * 80 + col) * 2] = ' ';
+            vga[(row * 80 + col) * 2 + 1] = 0x00;
+        }
+    }
+    print_str_vga("❌ PANIC: ", 0x0C, 0, 0);
+    print_str_vga(msg, 0x0C, 0, 10);
+    print_str_vga("Press Ctrl+Alt+Del to reset.", 0x0C, 1, 0);
+    __asm__ volatile ("hlt");
 }
 
 // ============================================================================
@@ -283,9 +261,7 @@ static char* strncpy(char *dest, const char *src, size_t n) {
 }
 
 static void uint_to_str(uint32_t num, char* buf, uint8_t width) {
-    for (int i = 0; i < width; i++) {
-        buf[i] = ' ';
-    }
+    for (int i = 0; i < width; i++) buf[i] = ' ';
     buf[width] = '\0';
     if (num == 0) {
         buf[width - 1] = '0';
@@ -319,13 +295,13 @@ static void* kmalloc(size_t size) {
         print_str_vga(" bytes. Free space: ", 0x0C, 15, 50);
         print_hex_vga(KERNEL_HEAP_SIZE - heap_offset, 0x0C, 15, 65);
         print_str_vga(" bytes.", 0x0C, 15, 75);
-        return NULL;
+        vga_panic("Heap exhausted.");
     }
 
     mem_block_t* block = free_metadata_list;
     if (!block) {
         print_str_vga("[CRITICAL] kmalloc FAILED! No metadata blocks available.", 0x0C, 16, 0);
-        return NULL;
+        vga_panic("Metadata pool exhausted.");
     }
     free_metadata_list = block->next;
 
@@ -442,10 +418,7 @@ static HyperVector copy_hyper_vector(const HyperVector* src) {
     dst.capacity = src->capacity;
     dst.active_dims = src->active_dims;
     dst.data = (float*)kmalloc(dst.capacity * sizeof(float));
-    if (!dst.data) {
-        dst.valid = 0;
-        return dst;
-    }
+    if (!dst.data) { dst.valid = 0; return dst; }
     memcpy(dst.data, src->data, dst.capacity * sizeof(float));
     dst.hash_sig = src->hash_sig;
     dst.valid = 1;
@@ -616,9 +589,7 @@ static void update_entities(void) {
             struct Gene* weakest = NULL;
             struct Gene* current = e->genome;
             while (current) {
-                if (!weakest || current->fitness < weakest->fitness) {
-                    weakest = current;
-                }
+                if (!weakest || current->fitness < weakest->fitness) weakest = current;
                 current = current->next;
             }
             if (weakest) {
@@ -646,8 +617,12 @@ static void update_entities(void) {
 // ============================================================================
 void kmain(void) __attribute__((noreturn));
 void kmain(void) {
+    // [1] Initialize metadata pool
+    print_str_vga("[1] Initializing metadata pool...", 0x0E, 3, 0);
     initialize_metadata_pool();
+    print_str_vga("[1] Done.", 0x0E, 3, 20);
 
+    // Clear screen
     volatile char* vga = (volatile char*)VIDEO_MEMORY;
     for (int row = 0; row < 25; row++) {
         for (int col = 0; col < 80; col++) {
@@ -657,26 +632,34 @@ void kmain(void) {
     }
 
     // Print "HYPER" at top
-    const char* banner = "HYPER";
     for (int i = 0; i < 5; i++) {
-        vga[i * 2] = banner[i];
+        vga[i * 2] = "HYPER"[i];
         vga[i * 2 + 1] = 0x0F;
     }
 
-    serial_init();  // Configure serial (no output)
     __asm__ volatile ("cli");
 
-    print_str_vga("🌌 Holographic Kernel with Emergent Memory Economy Starting...", 0x0E, 5, 0);
-    print_str_vga("Initializing holographic memory...", 0x0B, 6, 0);
+    // [2] Print boot message
+    print_str_vga("[2] 🌌 Holographic Kernel Starting...", 0x0E, 5, 0);
+
+    // [3] Initialize systems
+    print_str_vga("[3] Initializing holographic memory...", 0x0B, 6, 0);
     initialize_holographic_memory();
-    print_str_vga("Initializing collective consciousness...", 0x0A, 7, 0);
+    print_str_vga("[3] Done.", 0x0B, 6, 25);
+
+    print_str_vga("[4] Initializing collective consciousness...", 0x0A, 7, 0);
     initialize_collective_consciousness();
-    print_str_vga("Initializing emergent entities...", 0x0D, 8, 0);
+    print_str_vga("[4] Done.", 0x0A, 7, 30);
+
+    print_str_vga("[5] Initializing emergent entities...", 0x0D, 8, 0);
     initialize_emergent_entities();
-    print_str_vga("✅ System online. Entities managing memory.", 0x0F, 9, 0);
+    print_str_vga("[5] Done.", 0x0D, 8, 25);
+
+    print_str_vga("[6] ✅ System online. Entities managing memory.", 0x0F, 9, 0);
     print_str_vga("[BOOT] 🚀 HyperKernel fully initialized. Emergent economy active.", 0x0F, 10, 0);
 
-    // Stack integrity test — VGA-only, no serial
+    // [7] Stack integrity test
+    print_str_vga("[7] Testing stack integrity...", 0x0E, 11, 0);
     uint32_t test_val = 0xDEADBEEF;
     __asm__ volatile (
         "pushl %0\n\t"
@@ -690,6 +673,7 @@ void kmain(void) {
         : "r"(test_val)
         : "eax"
     );
+    print_str_vga("[7] Done.", 0x0E, 11, 25);
 
     uint32_t last_update = 0;
     uint32_t last_report = 0;
@@ -697,38 +681,38 @@ void kmain(void) {
     const uint32_t MAX_REPORTS = 4;
 
     while (1) {
+        // [8] Update entities
         if (holo_system.global_timestamp - last_update > 500000) {
+            print_str_vga("[8] Updating entities...", 0x0E, 12, 0);
             update_entities();
             last_update = holo_system.global_timestamp;
+            print_str_vga("[8] Done.", 0x0E, 12, 20);
         }
 
+        // [9] Print system report
         if (report_cycle < MAX_REPORTS &&
             holo_system.global_timestamp - last_report > REPORT_INTERVAL) {
+            print_str_vga("[9] Generating system report...", 0x0E, 13, 0);
             for (int row = 20; row < 25; row++) {
                 for (int col = 0; col < 80; col++) {
                     vga[(row * 80 + col) * 2] = ' ';
                     vga[(row * 80 + col) * 2 + 1] = 0x00;
                 }
             }
-
             print_str_vga("=== EMERGENT SYSTEM REPORT === TS:0x", 0x0E, 20, 0);
             print_hex_vga(holo_system.global_timestamp, 0x0E, 20, 28);
-
             float pressure = get_system_memory_pressure();
             uint32_t press_pct = (uint32_t)(pressure * 100);
             char mem_str[32] = "Mem:      %";
             uint_to_str(press_pct, mem_str + 5, 2);
             print_str_vga(mem_str, 0x0F, 21, 0);
-
             char ent_str[32] = "Ent:     ";
             uint_to_str(active_entity_count, ent_str + 5, 2);
             print_str_vga(ent_str, 0x0A, 22, 0);
-
             uint32_t coh_pct = (uint32_t)(collective.global_coherence * 100);
             char coh_str[32] = "Coh:      %";
             uint_to_str(coh_pct, coh_str + 5, 2);
             print_str_vga(coh_str, 0x0B, 23, 0);
-
             char cyc_str[32] = "Cycle:   /4";
             cyc_str[7] = '0' + (report_cycle % 10);
             cyc_str[8] = '\0';
@@ -737,9 +721,9 @@ void kmain(void) {
             char gc_buf[16];
             uint_to_str(gc_metadata_count, gc_buf, 6);
             print_str_vga(gc_buf, 0x0C, 24, 14);
-
             last_report = holo_system.global_timestamp;
             report_cycle++;
+            print_str_vga("[9] Done.", 0x0E, 13, 20);
         }
 
         holo_system.global_timestamp++;
