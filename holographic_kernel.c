@@ -340,8 +340,8 @@ static void perform_emergent_garbage_collection(void) {
         broadcast_thought(&pressure_thought);
         destroy_hyper_vector(&pressure_thought);
     }
-    uint32_t entities_deactivated = 0;
-    uint32_t genes_destroyed = 0;
+    // uint32_t entities_deactivated = 0; // Commented out as unused
+    // uint32_t genes_destroyed = 0; // Commented out as unused
     // --- NEW: Process garbage list and return metadata to pool ---
     mem_block_t* current = allocation_list;
     mem_block_t* prev = NULL;
@@ -634,26 +634,16 @@ void kmain(void) {
     // Test stack integrity
     uint32_t test_val = 0xDEADBEEF;
     __asm__ volatile (
-        "pushl %0
-\t"
-        "popl %%eax
-\t"
-        "cmp %0, %%eax
-\t"
-        "jne stack_error
-\t"
-        "jmp stack_ok
-\t"
-        "stack_error:
-\t"
-        "mov $0x0C, %%al
-\t"
-        "mov $0x00, %%dl
-\t"
-        "out dx, al
-\t"
-        "stack_ok:
-\t"
+        "pushl %0\n\t"
+        "popl %%eax\n\t"
+        "cmp %0, %%eax\n\t"
+        "jne stack_error\n\t"
+        "jmp stack_ok\n\t"
+        "stack_error:\n\t"
+        "mov $0x0C, %%al\n\t"
+        "mov $0x00, %%dl\n\t"
+        "out dx, al\n\t"
+        "stack_ok:\n\t"
         :
         : "r"(test_val)
         : "eax"
