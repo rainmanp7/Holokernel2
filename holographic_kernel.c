@@ -122,6 +122,9 @@ static mem_block_t* free_metadata_list = NULL;
 static mem_block_t* allocation_list = NULL; // Head of active allocations
 static uint32_t allocation_counter = 0;
 
+// --- NEW: Track garbage collected metadata blocks ---
+static uint32_t gc_metadata_count = 0;
+
 // ============================================================================
 // --- GLOBAL VARIABLES ---
 // ============================================================================
@@ -427,6 +430,7 @@ static void perform_emergent_garbage_collection(void) {
             // Add metadata block back to the free pool
             to_reclaim->next = free_metadata_list;
             free_metadata_list = to_reclaim;
+            gc_metadata_count++; // Increment the counter
         } else {
             prev = current;
             current = current->next;
@@ -618,7 +622,7 @@ static void initialize_emergent_entities(void) {
     serial_print("🧬 Initializing emergent entity pool...\n");
     HyperVector base_pattern = create_hyper_vector("GENOME_ADAPTIVE", 16);
     for (uint32_t i = 0; i < INITIAL_ENTITIES && i < MAX_ENTITIES; i++) {
-        struct Entity* e = &entity_pool[i];
+        struct Entity* e = &entity_pool[active_entity_count];
         e->id = active_entity_count;
         e->state = create_hyper_vector("TRAIT_DORMANT", 14);
         e->genome = create_gene("base", base_pattern);
@@ -726,11 +730,15 @@ void kmain(void) {
                 }
             }
 
-            // Header
-            const char* header = "=== EMERGENT SYSTEM REPORT ===";
-            for (int i = 0; i < 30 && header[i]; i++) {
+            // Header with Timestamp
+            char header[80] = "=== EMERGENT SYSTEM REPORT ==="; // Increased buffer size
+            // Append timestamp to header
+            char ts_str[32] = " TS:0x";
+            uint_to_str(holo_system.global_timestamp, ts_str + 5, 8); // Print timestamp as hex
+            strcat(header, ts_str);
+            for (int i = 0; i < 80 && header[i]; i++) { // Print up to 80 chars
                 vga[(20 * 80 + i) * 2] = header[i];
-                vga[(20 * 80 + i) * 2 + 1] = 0x0E;
+                vga[(20 * 80 + i) * 2 + 1] = 0x0E; // Yellow
             }
 
             // Memory pressure
@@ -760,16 +768,29 @@ void kmain(void) {
                 vga[(23 * 80 + i) * 2 + 1] = 0x0B;
             }
 
-            // Cycle
-            char cyc_str[20] = "Cycle:   /4"; // Increased buffer size
+            // Cycle, GC Count, Timestamp
+            char cyc_str[32] = "Cycle:   /4"; // Increased buffer size
             cyc_str[7] = '0' + (report_cycle % 10); // Ensure single digit
             cyc_str[8] = '\0'; // Now safe
-            for (int i = 0; i < 11 && cyc_str[i]; i++) { // Print up to 11 chars or null terminator
+            // Append GC count
+            strcat(cyc_str, " GC:");
+            char gc_str[16];
+            uint_to_str(gc_metadata_count, gc_str, 6); // Print GC count
+            strcat(cyc_str, gc_str);
+            // Print up to 31 chars or null terminator
+            for (int i = 0; i < 31 && cyc_str[i]; i++) {
                 vga[(24 * 80 + i) * 2] = cyc_str[i];
                 vga[(24 * 80 + i) * 2 + 1] = 0x0C;
             }
 
-            serial_print("[REPORT] System snapshot printed to VGA.\n");
+            serial_print("[REPORT] System snapshot printed to VGA at timestamp 0x");
+            print_hex(holo_system.global_timestamp);
+            serial_print(". Active Entities: ");
+            print_hex(active_entity_count);
+            serial_print(", GC Metadata Blocks: ");
+            print_hex(gc_metadata_count);
+            serial_print("\n");
+
             last_report = holo_system.global_timestamp;
             report_cycle++;
         }
