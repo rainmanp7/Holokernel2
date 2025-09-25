@@ -333,17 +333,6 @@ void kmain(void) {
     video[8] = 'R';
     video[9] = 0x0F;
     serial_init();
-        // --- MEMORY PROBE: What's at 0xA0000? ---
-    uint8_t probe_val = get_memory_value(0xA0000);
-    serial_print("[PROBE] Value at 0xA0000 = 0x");
-    print_hex((uint32_t)probe_val);
-    serial_print(" (ASCII: ");
-    if (probe_val >= 32 && probe_val <= 126) {
-        serial_write((char)probe_val);
-    } else {
-        serial_print("?");
-    }
-    serial_print(")\r\n");
     serial_print("DEBUG: Serial initialized, HyperKernel starting!\n");
 __asm__ volatile ("cli"); // Disable interrupts
     serial_print("Hyperdimensional Kernel (Dynamic Manifolds + Genomes) Starting...\n");
