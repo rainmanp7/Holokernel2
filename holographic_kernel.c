@@ -277,8 +277,8 @@ static void initialize_metadata_pool() {
 }
 static void* kmalloc(size_t size) {
     if (size == 0) return NULL; // Handle zero-size allocation
-    // PROPER ALIGNMENT
-    size_t aligned_size = (size + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
+    // FIXED: Correct 4-byte alignment for i386
+    size_t aligned_size = (size + 3) & ~3;
     if (heap_offset + aligned_size >= KERNEL_HEAP_SIZE) {
         // Print error to VGA
         print_str_vga("[CRITICAL] kmalloc FAILED! Requested: ", 0x0C, 15, 0);
@@ -605,7 +605,6 @@ void kmain(void) {
     // --- NEW: Initialize metadata pool first ---
     initialize_metadata_pool();
     volatile char* vga = (volatile char*)VIDEO_MEMORY;
-
     // Clear screen
     for (int row = 0; row < 25; row++) {
         for (int col = 0; col < 80; col++) {
@@ -613,50 +612,57 @@ void kmain(void) {
             vga[(row * 80 + col) * 2 + 1] = 0x00;
         }
     }
-
     // Print HYPER at top
     for (int i = 0; i < 5; i++) {
         vga[i * 2] = "HYPER"[i];
         vga[i * 2 + 1] = 0x0F;
     }
-
     serial_init(); // Configure serial port, but do not print anything to it
     __asm__ volatile ("cli");
-
     // Print boot message to VGA
     print_str_vga("🌌 Holographic Kernel with Emergent Memory Economy Starting...", 0x0E, 5, 0);
-
     // Initialize systems
     print_str_vga("Initializing holographic memory...", 0x0B, 6, 0);
     initialize_holographic_memory();
-
     print_str_vga("Initializing collective consciousness...", 0x0A, 7, 0);
     initialize_collective_consciousness();
-
     print_str_vga("Initializing emergent entities...", 0x0D, 8, 0);
     initialize_emergent_entities();
-
     print_str_vga("✅ System online. Entities managing memory.", 0x0F, 9, 0);
-
     // Boot complete indicator
     print_str_vga("[BOOT] 🚀 HyperKernel fully initialized. Emergent economy active.", 0x0F, 10, 0);
-
+    
+    // Test stack integrity
+    uint32_t test_val = 0xDEADBEEF;
+    __asm__ volatile (
+        "pushl %0\n\t"
+        "popl %%eax\n\t"
+        "cmp %0, %%eax\n\t"
+        "jne stack_error\n\t"
+        "jmp stack_ok\n\t"
+        "stack_error:\n\t"
+        "mov $0x0C, %%al\n\t"
+        "mov $0x00, %%dl\n\t"
+        "out dx, al\n\t"
+        "stack_ok:\n\t"
+        :
+        : "r"(test_val)
+        : "eax"
+    );
+    
     uint32_t last_update = 0;
     uint32_t last_report = 0;
     const uint32_t REPORT_INTERVAL = 3000000; // ~3 seconds
     const uint32_t MAX_REPORTS = 4;
-
     while (1) {
         // Update entities every ~0.5 sec
         if (holo_system.global_timestamp - last_update > 500000) {
             update_entities();
             last_update = holo_system.global_timestamp;
         }
-
         // Print system report every ~3 sec, max 4 times
         if (report_cycle < MAX_REPORTS &&
             holo_system.global_timestamp - last_report > REPORT_INTERVAL) {
-
             // Clear lines 20–24
             for (int row = 20; row < 25; row++) {
                 for (int col = 0; col < 80; col++) {
@@ -664,29 +670,24 @@ void kmain(void) {
                     vga[(row * 80 + col) * 2 + 1] = 0x00;
                 }
             }
-
             // Header with Timestamp
             print_str_vga("=== EMERGENT SYSTEM REPORT === TS:0x", 0x0E, 20, 0);
             print_hex_vga(holo_system.global_timestamp, 0x0E, 20, 28);
-
             // Memory pressure
             float pressure = get_system_memory_pressure();
             uint32_t press_pct = (uint32_t)(pressure * 100);
             char mem_str[32] = "Mem:      %";
             uint_to_str(press_pct, mem_str + 5, 2);
             print_str_vga(mem_str, 0x0F, 21, 0);
-
             // Active entities
             char ent_str[32] = "Ent:     ";
             uint_to_str(active_entity_count, ent_str + 5, 2);
             print_str_vga(ent_str, 0x0A, 22, 0);
-
             // Coherence
             uint32_t coh_pct = (uint32_t)(collective.global_coherence * 100);
             char coh_str[32] = "Coh:      %";
             uint_to_str(coh_pct, coh_str + 5, 2);
             print_str_vga(coh_str, 0x0B, 23, 0);
-
             // Cycle, GC Count, Timestamp
             char cyc_str[32] = "Cycle:   /4";
             cyc_str[7] = '0' + (report_cycle % 10);
@@ -696,11 +697,9 @@ void kmain(void) {
             char gc_buf[16];
             uint_to_str(gc_metadata_count, gc_buf, 6);
             print_str_vga(gc_buf, 0x0C, 24, 14);
-
             last_report = holo_system.global_timestamp;
             report_cycle++;
         }
-
         holo_system.global_timestamp++;
         __asm__ volatile("hlt");
     }
